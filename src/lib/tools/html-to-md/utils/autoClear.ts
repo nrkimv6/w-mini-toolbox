@@ -1,4 +1,4 @@
-import { inputHtml, outputMarkdown, userOptions } from '$lib/stores.js';
+import { inputHtml, outputMarkdown, userOptions } from '$lib/stores/html-to-md.svelte.js';
 import { get } from 'svelte/store';
 
 /**

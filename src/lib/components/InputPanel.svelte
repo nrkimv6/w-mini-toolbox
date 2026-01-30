@@ -1,25 +1,23 @@
 <script lang="ts">
-	import { inputHtml, userOptions, currentInputRule, settings, selectedFormat } from '../stores.js';
-	import { getAvailableRules, setSourceRule, type SourceRule } from '$lib/converter/converter.js';
-	import { debounce } from '$lib/utils.js';
-	import { readClipboardFormats, downloadFile, type ClipboardContent } from '$lib/utils/clipboard.js';
-	import { autoClearAfterDownload, showAutoClearNotification } from '$lib/utils/autoClear.js';
-	import { copyToClipboard } from '../converter/converter.js';
-	import { t } from 'svelte-i18n';
+	import { inputHtml, userOptions, currentInputRule, selectedFormat } from '$lib/stores/html-to-md.svelte.js';
+	import { getAvailableRules, setSourceRule, type SourceRule } from '$lib/tools/html-to-md/converter/converter.js';
+	import { readClipboardFormats, downloadFile, type ClipboardContent } from '$lib/tools/html-to-md/utils/clipboard.js';
+	import { autoClearAfterDownload, showAutoClearNotification } from '$lib/tools/html-to-md/utils/autoClear.js';
+	import { copyToClipboard } from '$lib/tools/html-to-md/converter/converter.js';
 	import { onMount } from 'svelte';
-	import { 
-		IconClipboard, 
-		IconClipboardText, 
-		IconFile, 
-		IconTrash, 
-		IconClipboardCopy as IconPaste, 
-		IconRefresh, 
-		IconWorld, 
-		IconPhoto, 
-		IconDownload, 
-		IconArrowsSort 
-	} from '@tabler/icons-svelte';
-	import { performEnhancedDetection, getDetectionSummary, type EnhancedDetectionResult } from '$lib/detector/enhancedDetector.js';
+	import {
+		Clipboard,
+		FileText,
+		File,
+		Trash2,
+		ClipboardPaste,
+		RefreshCw,
+		Globe,
+		Image,
+		Download,
+		ArrowUpDown
+	} from 'lucide-svelte';
+	import { performEnhancedDetection, getDetectionSummary, type EnhancedDetectionResult } from '$lib/tools/html-to-md/detector/enhancedDetector.js';
 
 	let textareaElement: HTMLTextAreaElement;
 	let clipboardFormats: ClipboardContent[] = [];
@@ -32,7 +30,15 @@
 	let copyButtonText = '';
 	let detectionSummary: string = '';
 	let detectionResult: EnhancedDetectionResult | null = null;
-	
+
+	// Debounce utility function
+	function debounce<T extends (...args: any[]) => any>(fn: T, delay: number = 300): (...args: Parameters<T>) => void {
+		let timeoutId: ReturnType<typeof setTimeout>;
+		return (...args: Parameters<T>) => {
+			clearTimeout(timeoutId);
+			timeoutId = setTimeout(() => fn(...args), delay);
+		};
+	}
 
 	// Debounced input handler
 	const handleInput = debounce((value: string) => {
@@ -44,20 +50,20 @@
 	}, 300);
 
 	// Initialize copy button text
-	$: copyButtonText = $t('common.copy', { default: '복사' });
+	$: copyButtonText = "복사";
 
 	// Copy input content to clipboard
 	async function handleCopyInput() {
 		const success = await copyToClipboard($inputHtml);
 		if (success) {
-			copyButtonText = $t('common.copied', { default: '복사됨' });
+			copyButtonText = "복사됨";
 			setTimeout(() => {
-				copyButtonText = $t('common.copy', { default: '복사' });
+				copyButtonText = "복사";
 			}, 2000);
 		} else {
-			copyButtonText = $t('common.failed', { default: '실패' });
+			copyButtonText = "실패";
 			setTimeout(() => {
-				copyButtonText = $t('common.copy', { default: '복사' });
+				copyButtonText = "복사";
 			}, 2000);
 		}
 	}
@@ -148,10 +154,10 @@
 	}
 
 	function getFormatIcon(type: string) {
-		if (type === 'text/html') return IconWorld;
-		if (type === 'text/plain') return IconClipboardText;
-		if (type.startsWith('image/')) return IconPhoto;
-		return IconClipboard;
+		if (type === 'text/html') return Globe;
+		if (type === 'text/plain') return FileText;
+		if (type.startsWith('image/')) return Image;
+		return Clipboard;
 	}
 
 	function getFormatSize(content: string): string {
@@ -210,7 +216,7 @@
 				if (mappedRule && mappedRule !== $currentInputRule) {
 					console.log(`Auto-switching from ${$currentInputRule} to ${mappedRule} (confidence: ${result.overallConfidence})`);
 					setSourceRule(mappedRule);
-					settings.updateSourceRule(mappedRule);
+					currentInputRule.set(mappedRule);
 				}
 			}
 		} catch (error) {
@@ -258,24 +264,24 @@
 
 <div class="input-panel">
 	<div class="panel-header">
-		<h3>{$t('input.title')}</h3>
+		<h3>입력</h3>
 		<div class="header-buttons">
 			<button class="paste-btn" on:click={loadClipboardFormats} disabled={loading}>
 				{#if loading}
-					<IconRefresh class="spin" size={16} />
-					{$t('common.loading')}
+					<RefreshCw class="spin" size={16} />
+					로딩...
 				{:else}
-					<IconPaste size={16} />
-					{$t('common.paste')}
+					<ClipboardPaste size={16} />
+					붙여넣기
 				{/if}
 			</button>
 			<button class="clear-btn" on:click={clearInput}>
-				<IconTrash size={16} />
-				{$t('common.clear')}
+				<Trash2 size={16} />
+				지우기
 			</button>
 			{#if showPasteHint}
 				<div class="paste-hint">
-					📋 {$t('input.globalPasteDetected')}
+					📋 붙여넣기 감지됨
 				</div>
 			{/if}
 			{#if showPermissionMessage}
@@ -286,15 +292,15 @@
 		</div>
 	</div>
 
-	{#if showFormatSelector && clipboardFormats.length > 0}
+{#if showFormatSelector && clipboardFormats.length > 0}
 		<div class="format-selector">
 			<div class="format-selector-header">
 				<div class="left-section">
 					<span class="format-label">
-						<IconArrowsSort size={16} />
-						{$t('input.clipboardFormats')}
+						<ArrowUpDown size={16} />
+						클립보드 포맷
 					</span>
-					<span class="format-count">{$t('input.formatsAvailable', { values: { count: clipboardFormats.filter(f => f.available).length } })}</span>
+					<span class="format-count">{clipboardFormats.filter(f => f.available).length}개 사용 가능</span>
 				</div>
 				{#if detectionSummary && detectionResult}
 					<div class="detection-summary" class:high-confidence={detectionResult.overallConfidence >= 0.8} class:medium-confidence={detectionResult.overallConfidence >= 0.6 && detectionResult.overallConfidence < 0.8} class:low-confidence={detectionResult.overallConfidence < 0.6}>
@@ -307,7 +313,7 @@
 				{#each clipboardFormats as format}
 					{#if format.available}
 						<div class="format-item">
-							<button 
+							<button
 								class="format-btn"
 								class:active={localSelectedFormat === format.type}
 								on:click={() => selectFormat(format.type)}
@@ -320,7 +326,7 @@
 								<span class="format-size">({getFormatSize(format.content)})</span>
 							</button>
 							{#if format.isFile}
-								<button 
+								<button
 									class="download-btn"
 									on:click={async () => {
 										try {
@@ -335,7 +341,7 @@
 									}}
 									title={`Download ${format.fileName}`}
 								>
-									<IconDownload size={14} />
+									<Download size={14} />
 								</button>
 							{/if}
 						</div>
@@ -345,26 +351,26 @@
 		</div>
 	{/if}
 
-	
+
 	<div class="textarea-wrapper">
 		<textarea
 			bind:this={textareaElement}
-			placeholder={$t('input.placeholder')}
+			placeholder="HTML을 붙여넣으세요..."
 			on:input={(e) => handleInput((e.target as HTMLTextAreaElement)?.value ?? '')}
 			on:paste={handleTextareaPaste}
 			class:has-content={$inputHtml.trim().length > 0}
 		></textarea>
 		{#if $inputHtml.trim().length > 0}
-			<button 
+			<button
 				class="copy-input-btn"
 				on:click={handleCopyInput}
 				title={copyButtonText}
 			>
-				<IconClipboard size={16} />
+				<Clipboard size={16} />
 			</button>
 		{/if}
 	</div>
-	
+
 </div>
 
 <style>

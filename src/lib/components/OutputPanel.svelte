@@ -1,11 +1,10 @@
 <script lang="ts">
-	import { outputMarkdown, userOptions, isPreviewMode, inputHtml, selectedFormat, currentInputRule } from '../stores.js';
-	import { copyToClipboard, downloadAsFile, generateFilename } from '../converter/converter.js';
-	import { autoClearAfterCopy, autoClearAfterDownload, showAutoClearNotification } from '$lib/utils/autoClear.js';
-	import { applyOutputRule } from '../converter/outputProcessor.js';
+	import { outputMarkdown, userOptions, isPreviewMode, inputHtml, selectedFormat, currentInputRule } from '$lib/stores/html-to-md.svelte.js';
+	import { copyToClipboard, downloadAsFile, generateFilename } from '$lib/tools/html-to-md/converter/converter.js';
+	import { autoClearAfterCopy, autoClearAfterDownload, showAutoClearNotification } from '$lib/tools/html-to-md/utils/autoClear.js';
+	import { applyOutputRule } from '$lib/tools/html-to-md/converter/outputProcessor.js';
 	import OutputRuleSelector, { type OutputRule } from './OutputRuleSelector.svelte';
-	import { t } from 'svelte-i18n';
-	import { IconClipboard, IconDownload, IconFileText } from '@tabler/icons-svelte';
+	import { Clipboard, Download, FileText } from 'lucide-svelte';
 	import { marked } from 'marked';
 
 	let selectedOutputRule: OutputRule = 'raw';
@@ -16,51 +15,47 @@
 	// 미리보기를 위한 HTML 렌더링 (미리보기 모드일 때만)
 	$: previewHtml = $isPreviewMode && processedMarkdown ? marked(processedMarkdown) : '';
 
-	let copyButtonText: string;
-	let downloadButtonText: string;
-
-	// Initialize button texts with reactive statements
-	$: copyButtonText = $t('common.copy');
-	$: downloadButtonText = $t('common.download');
+	let copyButtonText = "복사";
+	let downloadButtonText = "다운로드";
 
 	async function handleCopy() {
 		const success = await copyToClipboard(processedMarkdown);
 		if (success) {
-			copyButtonText = $t('common.copied');
+			copyButtonText = "복사됨";
 			setTimeout(() => {
-				copyButtonText = $t('common.copy');
+				copyButtonText = "복사";
 			}, 2000);
-			
+
 			// Auto-clear if enabled
 			if ($userOptions.autoClearAfterCopy) {
 				showAutoClearNotification('copy');
 				await autoClearAfterCopy();
 			}
 		} else {
-			copyButtonText = $t('common.failed');
+			copyButtonText = "실패";
 			setTimeout(() => {
-				copyButtonText = $t('common.copy');
+				copyButtonText = "복사";
 			}, 2000);
 		}
 	}
 
 	async function handleDownload() {
 		if (!processedMarkdown.trim()) {
-			downloadButtonText = $t('common.noContent');
+			downloadButtonText = "내용 없음";
 			setTimeout(() => {
-				downloadButtonText = $t('common.download');
+				downloadButtonText = "다운로드";
 			}, 2000);
 			return;
 		}
 
 		const filename = generateFilename(processedMarkdown);
 		downloadAsFile(processedMarkdown, filename);
-		
-		downloadButtonText = $t('common.downloaded');
+
+		downloadButtonText = "다운로드됨";
 		setTimeout(() => {
-			downloadButtonText = $t('common.download');
+			downloadButtonText = "다운로드";
 		}, 2000);
-		
+
 		// Auto-clear if enabled
 		if ($userOptions.autoClearAfterDownload) {
 			showAutoClearNotification('download');
@@ -71,25 +66,25 @@
 
 <div class="output-panel">
 	<div class="panel-header">
-		<h3>{$t('output.title')}</h3>
+		<h3>출력</h3>
 		<div class="button-group">
 			<button class="copy-btn" onclick={handleCopy}>
-				<IconClipboard size={16} />
+				<Clipboard size={16} />
 				{copyButtonText}
 			</button>
 			<button class="download-btn" onclick={handleDownload}>
-				<IconDownload size={16} />
+				<Download size={16} />
 				{downloadButtonText}
 			</button>
 		</div>
 	</div>
-	
+
 	{#if $inputHtml.trim()}
 		<OutputRuleSelector bind:selectedOutputRule />
 	{/if}
-	
+
 	{#if $isPreviewMode && processedMarkdown.trim()}
-		<div 
+		<div
 			class="preview-content"
 			class:has-content={processedMarkdown.trim().length > 0}
 		>
@@ -99,7 +94,7 @@
 		<textarea
 			readonly
 			value={processedMarkdown}
-			placeholder={$t('output.placeholder')}
+			placeholder="변환된 마크다운이 여기에 표시됩니다..."
 			class:has-content={processedMarkdown.trim().length > 0}
 		></textarea>
 	{/if}
