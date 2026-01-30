@@ -1,0 +1,15 @@
+name = "mini-toolbox"
+compatibility_date = "2026-01-29"
+compatibility_flags = ["nodejs_compat"]
+main = ".svelte-kit/cloudflare/_worker.js"
+workers_dev = true
+
+[vars]
+PUBLIC_SUPABASE_URL = "https://qxiuqztinabmdhclxsuz.supabase.co"
+PUBLIC_SUPABASE_ANON_KEY = "sb_publishable_ujqoBN-UBndhHh8aUA5Tog_gZOYPTEA"
+PUBLIC_AUTH_WORKER_URL = "https://auth.woory.day"
+PUBLIC_APP_ID = "mini-toolbox"
+
+[assets]
+directory = ".svelte-kit/cloudflare"
+binding = "ASSETS"
