@@ -1,4 +1,4 @@
-import type { SourceRule } from '$lib/converter/converter';
+import type { SourceRule } from '$lib/tools/html-to-md/converter/converter.js';
 
 // 저장할 설정 데이터 타입 정의
 export interface StorageSettings {
