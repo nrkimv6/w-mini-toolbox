@@ -313,14 +313,19 @@
 	@media (max-width: 768px) {
 		.panels-container {
 			grid-template-columns: 1fr;
-			grid-template-rows: 1fr 1fr;
+			grid-template-rows: auto auto;
 			gap: 1rem;
 		}
 
 		.app {
 			min-height: 100dvh;
-			max-height: 100dvh;
+			max-height: none;
+			overflow-y: auto;
 			padding: 1rem 0.5rem;
+		}
+
+		.panel-wrapper {
+			min-height: 400px;
 		}
 
 		.app-header {
