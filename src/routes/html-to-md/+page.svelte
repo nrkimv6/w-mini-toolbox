@@ -1,6 +1,7 @@
 <script lang="ts">
 	import InputPanel from '$lib/components/InputPanel.svelte';
 	import OutputPanel from '$lib/components/OutputPanel.svelte';
+	import OptionsPanel from '$lib/components/OptionsPanel.svelte';
 	import { inputHtml, outputMarkdown, isConverting, currentInputRule, warningMessage } from '$lib/stores/html-to-md.svelte.js';
 	import { convertHtmlToMarkdown } from '$lib/tools/html-to-md/converter/converter.js';
 	import { detectContentType } from '$lib/tools/html-to-md/detector/contentDetector.js';
@@ -97,6 +98,11 @@
 			</div>
 		</div>
 	</main>
+
+	<!-- 옵션 패널 -->
+	<div class="options-section">
+		<OptionsPanel />
+	</div>
 
 	<!-- 푸터 -->
 	<footer class="app-footer">
@@ -268,6 +274,13 @@
 	.panel-wrapper:hover {
 		transform: translateY(-1px);
 		box-shadow: 0 8px 25px -8px hsl(280 60% 70% / 0.25);
+	}
+
+	.options-section {
+		max-width: min(1200px, calc(100vw - 2rem));
+		margin: 1rem auto 0 auto;
+		width: 100%;
+		animation: gentleIn 0.6s ease-out 0.3s both;
 	}
 
 	.app-footer {
