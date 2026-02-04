@@ -1,6 +1,12 @@
 # DONE (최근 20개)
 
-- [x] 2026-02-04: CRITICAL/MEDIUM 결함 수정 (MT-3~5) (from: plan/2026-02-04_mini-toolbox-defect-fix.md)
+- [x] 2026-02-04: CRITICAL 결함 수정 (MT-1, MT-2) + LOW 정리 (MT-6) (from: plan/2026-02-04_mini-toolbox-defect-fix.md)
+  - MT-1 (CRITICAL): 루트 페이지 생성 (`src/routes/+page.svelte`) — 404 해결
+  - MT-2 (CRITICAL): CSS 커스텀 속성 정의 (`app.css`) — 색상/테두리/반경 스타일 복구
+  - MT-6 (LOW): 미사용 인증 시스템 제거 (`+layout.svelte`) — 불필요한 로딩 딜레이 제거
+  - 빌드 성공 확인
+
+- [x] 2026-02-04: MEDIUM 결함 수정 (MT-3~5) (from: plan/2026-02-04_mini-toolbox-defect-fix.md)
   - MT-3 (MEDIUM): InputPanel 모바일 스크롤 셀렉터 오타 수정 (`.panel-headSourceRule` → `.panel-header`)
   - MT-4 (MEDIUM): RuleSelector CSS 중첩 구조 수정 (전역 스코프 누출 방지)
   - MT-5 (MEDIUM): OptionsPanel 미사용 이벤트 디스패처 제거 (Svelte 4/5 혼용 정리)

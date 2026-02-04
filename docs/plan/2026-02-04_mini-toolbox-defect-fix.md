@@ -24,7 +24,7 @@
 
 ## 1. CRITICAL 우선순위
 
-### MT-1: 루트 페이지 부재로 404 발생
+### MT-1: 루트 페이지 부재로 404 발생 ✅ 완료
 
 **심각도**: CRITICAL - 사이트 방문 시 즉시 404 에러
 
@@ -100,7 +100,7 @@ export const tools: Tool[] = [
 
 ---
 
-### MT-2: CSS 커스텀 속성 미정의
+### MT-2: CSS 커스텀 속성 미정의 ✅ 완료
 
 **심각도**: CRITICAL - 다수 컴포넌트의 색상/테두리/반경 스타일이 깨짐
 
@@ -383,7 +383,7 @@ function togglePanel() {
 
 ### MT-6~8: 미사용 인증 시스템, console.log, $: reactive 간섭
 
-#### MT-6: 미사용 인증 시스템 (LOW)
+#### MT-6: 미사용 인증 시스템 (LOW) ✅ 완료
 
 **현상**: `auth.svelte.ts`에 전체 Supabase 인증 스토어가 구현되어 있고, `+layout.svelte`에서 `authStore.initialize()`를 호출하고 `authStore.loading` 동안 스피너를 표시한다. 그러나 `mini-toolbox`는 인증이 필요 없는 프로젝트로, 모든 도구가 공개 접근이다. 인증 초기화로 인해 불필요한 Supabase 네트워크 요청과 로딩 딜레이가 발생한다.
 
