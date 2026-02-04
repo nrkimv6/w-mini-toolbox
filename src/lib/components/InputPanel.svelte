@@ -240,12 +240,12 @@
 	function scrollToOutputOnMobile() {
 		// 모바일에서만 동작 (768px 이하)
 		if (window.innerWidth > 768) return;
-		
-		const outputPanel = document.querySelector('.output-panel .panel-headSourceRule');
+
+		const outputPanel = document.querySelector('.output-panel .panel-header');
 		if (outputPanel) {
 			// 출력 패널 헤더(복사/다운로드 버튼 영역)가 화면 상단에 오도록 스크롤
-			outputPanel.scrollIntoView({ 
-				behavior: 'smooth', 
+			outputPanel.scrollIntoView({
+				behavior: 'smooth',
 				block: 'start'
 			});
 		}

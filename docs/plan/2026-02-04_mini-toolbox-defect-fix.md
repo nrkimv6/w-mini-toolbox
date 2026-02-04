@@ -194,13 +194,15 @@ border-radius: var(--radius);
 
 ## 2. MEDIUM 우선순위
 
-### MT-3: InputPanel 셀렉터 오타로 모바일 스크롤 실패
+### MT-3: InputPanel 셀렉터 오타로 모바일 스크롤 실패 ✅ 완료
 
 **심각도**: MEDIUM - 모바일에서 변환 후 출력 패널로 자동 스크롤 불가
 
 **현상**: `scrollToOutputOnMobile()` 함수가 `.panel-headSourceRule` 셀렉터를 사용하지만, 실제 OutputPanel의 클래스명은 `.panel-header`이다. `querySelector`가 `null`을 반환하여 스크롤이 동작하지 않는다.
 
 **파일 위치**: `mini-toolbox\src\lib\components\InputPanel.svelte` (244행)
+
+**적용된 수정**: 셀렉터를 `.panel-header`로 수정
 
 **현재 코드**:
 ```typescript
@@ -246,13 +248,15 @@ function scrollToOutputOnMobile() {
 
 ---
 
-### MT-4: RuleSelector CSS 중첩 구조 오류
+### MT-4: RuleSelector CSS 중첩 구조 오류 ✅ 완료
 
 **심각도**: MEDIUM - 일부 반응형 스타일이 의도치 않은 범위에 적용
 
 **현상**: `RuleSelector.svelte`의 `<style>` 블록에서 `@keyframes gentleIn` 정의가 두 번 등장하고(215행, 272행), 272행의 `@keyframes gentleIn` 블록 닫힘 이후(281행)에 `.rule-label`, `.rule-select`, `.detection-info`, `.confidence` 규칙이 미디어 쿼리 밖 전역 스코프에 노출된다. 이로 인해 768px 반응형 스타일과 전역 스타일이 충돌한다.
 
 **파일 위치**: `mini-toolbox\src\lib\components\RuleSelector.svelte` (270~319행)
+
+**적용된 수정**: 중복 `@keyframes` 제거 및 스타일을 `@media (max-width: 640px)` 블록으로 감쌈
 
 **현재 코드** (문제 구간):
 ```css
@@ -330,13 +334,15 @@ function scrollToOutputOnMobile() {
 
 ---
 
-### MT-5: OptionsPanel 미사용 이벤트 디스패치
+### MT-5: OptionsPanel 미사용 이벤트 디스패치 ✅ 완료
 
 **심각도**: MEDIUM - Dead code이며, Svelte 5 `$state`와 Svelte 4 `createEventDispatcher` 혼용
 
 **현상**: `OptionsPanel.svelte`에서 `createEventDispatcher()`로 `'settingsToggle'` 이벤트를 dispatch하지만, 이 컴포넌트를 사용하는 `html-to-md/+page.svelte`에서 해당 이벤트를 수신하지 않는다. 또한 Svelte 5의 `$state`와 Svelte 4의 `createEventDispatcher`가 혼용되어 있다.
 
 **파일 위치**: `mini-toolbox\src\lib\components\OptionsPanel.svelte` (6~11행)
+
+**적용된 수정**: `createEventDispatcher` import 및 dispatch 호출 제거
 
 **현재 코드**:
 ```typescript

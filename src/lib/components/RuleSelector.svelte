@@ -269,23 +269,14 @@
 		}
 	}
 
-	@keyframes gentleIn {
-		0% { 
-			transform: translateX(-10px) scale(0.98); 
-			opacity: 0; 
-		}
-		100% { 
-			transform: translateX(0) scale(1); 
-			opacity: 1; 
-		}
-	}
+	@media (max-width: 640px) {
 		.rule-label {
 			font-size: 0.8rem;
 			text-align: left;
 			flex-shrink: 0;
 			white-space: nowrap;
 		}
-		
+
 		.rule-select {
 			font-size: 0.8rem;
 			min-width: unset;
@@ -300,6 +291,7 @@
 		.confidence {
 			font-size: 0.65rem;
 		}
+	}
 
 	@media (max-width: 480px) {
 		.settings-box {

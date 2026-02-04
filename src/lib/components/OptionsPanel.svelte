@@ -1,14 +1,11 @@
 <script lang="ts">
 	import { userOptions } from '$lib/stores/html-to-md.svelte.js';
 	import RuleSelector from './RuleSelector.svelte';
-	import { createEventDispatcher } from 'svelte';
 
-	const dispatch = createEventDispatcher();
 	let isExpanded = $state(false);
 
 	function togglePanel() {
 		isExpanded = !isExpanded;
-		dispatch('settingsToggle', { isExpanded });
 	}
 
 	function handleOptionToggle(option: 'autoClearAfterCopy' | 'autoClearAfterDownload' | 'autoSaveInput') {
