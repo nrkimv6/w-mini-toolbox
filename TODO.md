@@ -1,29 +1,21 @@
-# TODO
-
-> from: plan/2026-01-30_mini-toolbox.md
+# mini-toolbox - TODO
 
 ## In Progress
 
-*현재 없음*
+### defect-fix (1/8, 12.5% - 진행 중)
+- [ ] CSS 커스텀 속성 수정
+- [ ] InputPanel 수정
+- [ ] OutputPanel 이식
+- [ ] RuleSelector 추가
+- [ ] (기타 4개)
 
 ## Pending
 
-- [ ] **SIGNED_OUT 핸들러 + Store 정리 추가** — [docs/plan/2026-02-04_fix-logout-cleanup.md](docs/plan/2026-02-04_fix-logout-cleanup.md) (0/5 완료, 0%)
-  - html-to-md 스토어에 cleanup 추가, auth에 SIGNED_OUT 분기 추가
+### logout-cleanup (0/5, 0%)
+- [ ] SIGNED_OUT 핸들러 추가
+- [ ] html-to-md 스토어 정리
+- [ ] (기타 3개)
 
-- [x] **2026-02-04 결함 감사 수정** - [docs/plan/2026-02-04_mini-toolbox-defect-fix.md](docs/plan/2026-02-04_mini-toolbox-defect-fix.md) ✅ 완료
-  - ~~CRITICAL 2건~~, ~~MEDIUM 3건~~, ~~LOW 2건~~ (MT-8은 참고사항으로 유지)
+---
 
-### 🚫 수동 작업 (사용자 처리 필요)
-> 상세 내용: [docs/manual-tasks.md](docs/manual-tasks.md)
-
-#### P2: 배포
-- [-] Cloudflare Pages 프로젝트 생성
-- [-] 커스텀 도메인 연결: `toolbox.woory.day`
-- [-] 배포 확인
-
-### 향후 개선
-- [ ] InputPanel, OutputPanel 컴포넌트 완전 이식 (클립보드, 파일 다운로드 등)
-- [ ] RuleSelector 추가 (Notion, Claude, ChatGPT 등 소스 선택)
-- [ ] 경고 메시지 표시 개선
-- [ ] 미리보기 모드 추가
+*마지막 업데이트: 2026-02-05*
