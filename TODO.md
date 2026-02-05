@@ -11,8 +11,8 @@
 - [ ] **SIGNED_OUT 핸들러 + Store 정리 추가** — [docs/plan/2026-02-04_fix-logout-cleanup.md](docs/plan/2026-02-04_fix-logout-cleanup.md) (0/5 완료, 0%)
   - html-to-md 스토어에 cleanup 추가, auth에 SIGNED_OUT 분기 추가
 
-- [ ] **2026-02-04 결함 감사 수정** - [docs/plan/2026-02-04_mini-toolbox-defect-fix.md](docs/plan/2026-02-04_mini-toolbox-defect-fix.md) (6/8 완료, 75%)
-  - ~~CRITICAL 2건~~, ~~MEDIUM 3건~~, LOW 2건 남음 (MT-7, MT-8)
+- [x] **2026-02-04 결함 감사 수정** - [docs/plan/2026-02-04_mini-toolbox-defect-fix.md](docs/plan/2026-02-04_mini-toolbox-defect-fix.md) ✅ 완료
+  - ~~CRITICAL 2건~~, ~~MEDIUM 3건~~, ~~LOW 2건~~ (MT-8은 참고사항으로 유지)
 
 ### 🚫 수동 작업 (사용자 처리 필요)
 > 상세 내용: [docs/manual-tasks.md](docs/manual-tasks.md)

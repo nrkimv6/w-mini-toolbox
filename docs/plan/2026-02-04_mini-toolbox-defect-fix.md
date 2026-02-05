@@ -437,7 +437,7 @@ function togglePanel() {
 </div>
 ```
 
-#### MT-7: console.log 제거 (LOW)
+#### MT-7: console.log 제거 (LOW) ✅ 완료
 
 **현상**: `InputPanel.svelte`에 디버깅용 `console.log`가 6개소 존재.
 

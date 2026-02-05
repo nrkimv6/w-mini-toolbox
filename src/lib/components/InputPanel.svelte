@@ -80,11 +80,9 @@
 	async function loadClipboardFormats() {
 		loading = true;
 		showPermissionMessage = false;
-		console.log('Loading clipboard formats...');
-		
+
 		try {
 			clipboardFormats = await readClipboardFormats();
-			console.log('Loaded clipboard formats:', clipboardFormats);
 			
 			// Check if we got an error format
 			const errorFormat = clipboardFormats.find(f => f.type === 'error');
@@ -112,9 +110,7 @@
 				
 				// Show format selector if there are any available formats
 				const availableFormats = clipboardFormats.filter(f => f.available);
-				console.log('Available formats:', availableFormats.length);
 				showFormatSelector = availableFormats.length > 0;
-				console.log('showFormatSelector:', showFormatSelector);
 				
 				// Auto-scroll on mobile after successful paste
 				if (availableFormats.length > 0) {
@@ -214,7 +210,6 @@
 			if (result.recommendedRule && result.overallConfidence > 0.7) {
 				const mappedRule = mapDetectTypeToSourceRule(result.recommendedRule);
 				if (mappedRule && mappedRule !== $currentInputRule) {
-					console.log(`Auto-switching from ${$currentInputRule} to ${mappedRule} (confidence: ${result.overallConfidence})`);
 					setSourceRule(mappedRule);
 					currentInputRule.set(mappedRule);
 				}

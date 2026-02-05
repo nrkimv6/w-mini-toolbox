@@ -1,5 +1,10 @@
 # DONE (최근 20개)
 
+- [x] 2026-02-05: LOW 결함 수정 (MT-7) — console.log 제거 (from: plan/2026-02-04_mini-toolbox-defect-fix.md)
+  - MT-7 (LOW): InputPanel.svelte 디버깅 console.log 5개 제거
+  - MT-8 (LOW): Svelte 4/5 혼용 — 향후 마이그레이션 시 일괄 처리 (참고사항)
+  - **결함 감사 8/8 완료 (100%)**
+
 - [x] 2026-02-04: CRITICAL 결함 수정 (MT-1, MT-2) + LOW 정리 (MT-6) (from: plan/2026-02-04_mini-toolbox-defect-fix.md)
   - MT-1 (CRITICAL): 루트 페이지 생성 (`src/routes/+page.svelte`) — 404 해결
   - MT-2 (CRITICAL): CSS 커스텀 속성 정의 (`app.css`) — 색상/테두리/반경 스타일 복구
