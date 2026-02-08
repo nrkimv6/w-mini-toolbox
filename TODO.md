@@ -11,11 +11,14 @@
 
 ## Pending
 
-### logout-cleanup (0/5, 0%)
-- [ ] SIGNED_OUT 핸들러 추가
-- [ ] html-to-md 스토어 정리
-- [ ] (기타 3개)
+*현재 없음*
+
+## Completed
+
+### ✅ logout-cleanup (5/5, 100%) - 2026-02-08 완료
+- [x] SIGNED_OUT 핸들러 추가 완료
+- [x] html-to-md 스토어 정리 완료 → [docs/plan](docs/plan/2026-02-04_fix-logout-cleanup.md)
 
 ---
 
-*마지막 업데이트: 2026-02-05*
+*마지막 업데이트: 2026-02-08*
