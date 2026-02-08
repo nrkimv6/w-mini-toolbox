@@ -1,5 +1,13 @@
 # DONE (최근 20개)
 
+- [x] 2026-02-08: screenshot-generator → mini-toolbox 통합 (from: plan/2026-02-08_screenshot-generator-integration_todo.md)
+  - Phase 1-3: 의존성, 컴포넌트, 라우트 이관 완료 (28개 항목)
+  - html2canvas, jszip 패키지 추가
+  - 11개 Svelte 컴포넌트 + i18n + 스토어 이관
+  - `/screenshot` 라우트 생성 + 홈 페이지 등록
+  - 빌드 테스트 성공 (adapter-cloudflare)
+  - **수동 검증 필요**: 기능 테스트, 도메인 리다이렉트, 프로젝트 아카이브 (MANUAL_TASKS.md 참조)
+
 - [x] 2026-02-05: LOW 결함 수정 (MT-7) — console.log 제거 (from: plan/2026-02-04_mini-toolbox-defect-fix.md)
   - MT-7 (LOW): InputPanel.svelte 디버깅 console.log 5개 제거
   - MT-8 (LOW): Svelte 4/5 혼용 — 향후 마이그레이션 시 일괄 처리 (참고사항)
