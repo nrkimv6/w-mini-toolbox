@@ -1,6 +1,6 @@
 # mini-toolbox - TODO
 
-> 완료된 작업: [CHANGELOG.md](CHANGELOG.md)
+> 완료된 작업: [DONE.md](docs/DONE.md)
 
 ## In Progress
 
@@ -12,9 +12,9 @@
 - [ ] Phase 5: 통합 테스트 및 정리 (from: plan/2026-02-08_screenshot-generator-integration#Phase5)
 - [ ] Phase 6: 후속 정리 (from: plan/2026-02-08_screenshot-generator-integration#Phase6)
 
-### defect-fix (3/8, 37.5% - 진행 중)
+### defect-fix (4/8, 50% - 진행 중)
 - [x] CSS 커스텀 속성 수정
-- [ ] InputPanel 수정
+- [x] InputPanel 수정
 - [ ] OutputPanel 이식
 - [x] RuleSelector 추가
 - [ ] (기타 4개)
