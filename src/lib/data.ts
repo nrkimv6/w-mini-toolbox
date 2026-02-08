@@ -13,5 +13,12 @@ export const tools: Tool[] = [
 		description: 'HTML을 깔끔한 마크다운으로 변환',
 		icon: 'FileText',
 		href: '/html-to-md'
+	},
+	{
+		id: 'screenshot',
+		name: 'Screenshot Mockup',
+		description: '모바일 디바이스 프레임 목업 생성',
+		icon: 'Smartphone',
+		href: '/screenshot'
 	}
 ];

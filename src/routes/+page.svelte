@@ -1,6 +1,13 @@
 <script lang="ts">
 	import { tools } from '$lib/data';
-	import { FileText } from 'lucide-svelte';
+	import { FileText, Smartphone } from 'lucide-svelte';
+	import type { ComponentType } from 'svelte';
+
+	// Icon mapping
+	const iconMap: Record<string, ComponentType> = {
+		FileText,
+		Smartphone
+	};
 </script>
 
 <svelte:head>
@@ -13,12 +20,13 @@
 
 	<div class="grid w-full max-w-md gap-4">
 		{#each tools as tool}
+			{@const Icon = iconMap[tool.icon] || FileText}
 			<a
 				href={tool.href}
 				class="flex items-center gap-4 rounded-xl border border-gray-200 p-4 transition-colors hover:bg-gray-50"
 			>
 				<div class="flex h-10 w-10 items-center justify-center rounded-lg bg-gray-100">
-					<FileText class="h-5 w-5 text-gray-600" />
+					<Icon class="h-5 w-5 text-gray-600" />
 				</div>
 				<div>
 					<h2 class="font-semibold">{tool.name}</h2>
