@@ -2,6 +2,7 @@ import { browser } from '$app/environment';
 import type { User } from '@supabase/supabase-js';
 import { supabase } from '$lib/supabase';
 import { config } from '$lib/config';
+import { cleanup as htmlToMdCleanup } from './html-to-md.svelte';
 
 function createAuthStore() {
 	let user = $state<User | null>(null);
@@ -28,8 +29,14 @@ function createAuthStore() {
 		}
 
 		// 인증 상태 변경 리스너
-		supabase.auth.onAuthStateChange((_event, session) => {
-			user = session?.user || null;
+		supabase.auth.onAuthStateChange((event, session) => {
+			if (event === 'SIGNED_OUT') {
+				// 스토어 cleanup
+				htmlToMdCleanup();
+				user = null;
+			} else {
+				user = session?.user || null;
+			}
 		});
 	}
 

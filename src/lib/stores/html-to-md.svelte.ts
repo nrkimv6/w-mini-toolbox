@@ -1,7 +1,7 @@
 import { writable, get } from 'svelte/store';
 import type { SourceRule } from '$lib/tools/html-to-md/converter/converter.js';
 import type { UserOptions } from '$lib/tools/html-to-md/types/options.js';
-import { loadSettings, saveSettings, saveInputContent, loadInputContent, type StorageSettings } from '$lib/tools/html-to-md/utils/storage.js';
+import { loadSettings, saveSettings, saveInputContent, loadInputContent, clearAllSettings, type StorageSettings } from '$lib/tools/html-to-md/utils/storage.js';
 
 // 브라우저 환경에서만 localStorage 로드
 const isBrowser = typeof window !== 'undefined';
@@ -113,3 +113,25 @@ function createUserOptionsStore() {
 }
 
 export const userOptions = createUserOptionsStore();
+
+// Cleanup 함수 - 로그아웃 시 모든 설정 초기화
+export function cleanup() {
+	if (!isBrowser) return;
+
+	// 스토어 초기화
+	inputHtml.set('');
+	outputMarkdown.set('');
+	isConverting.set(false);
+	isPreviewMode.set(false);
+	warningMessage.set('');
+	selectedFormat.set('HTML');
+	currentInputRule.set('default');
+	userOptions.set({
+		autoClearAfterCopy: false,
+		autoClearAfterDownload: true,
+		autoSaveInput: false
+	});
+
+	// localStorage 클리어
+	clearAllSettings();
+}
