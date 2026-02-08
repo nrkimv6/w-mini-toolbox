@@ -1,23 +1,25 @@
 # mini-toolbox - TODO
 
+> 완료된 작업: [CHANGELOG.md](CHANGELOG.md)
+
 ## In Progress
 
-### defect-fix (1/8, 12.5% - 진행 중)
-- [ ] CSS 커스텀 속성 수정
+### screenshot-generator → mini-toolbox 통합 (0/28, 0%)
+- [ ] Phase 1: 의존성 및 기반 설정 (from: plan/2026-02-08_screenshot-generator-integration#Phase1)
+- [ ] Phase 2: 컴포넌트 이관 (from: plan/2026-02-08_screenshot-generator-integration#Phase2)
+- [ ] Phase 3: 라우트 및 홈 등록 (from: plan/2026-02-08_screenshot-generator-integration#Phase3)
+- [ ] Phase 4: i18n 통합 (from: plan/2026-02-08_screenshot-generator-integration#Phase4)
+- [ ] Phase 5: 통합 테스트 및 정리 (from: plan/2026-02-08_screenshot-generator-integration#Phase5)
+- [ ] Phase 6: 후속 정리 (from: plan/2026-02-08_screenshot-generator-integration#Phase6)
+
+### defect-fix (2/8, 25% - 진행 중)
+- [x] CSS 커스텀 속성 수정
 - [ ] InputPanel 수정
 - [ ] OutputPanel 이식
 - [ ] RuleSelector 추가
 - [ ] (기타 4개)
 
 ## Pending
-
-*현재 없음*
-
-## Completed
-
-### ✅ logout-cleanup (5/5, 100%) - 2026-02-08 완료
-- [x] SIGNED_OUT 핸들러 추가 완료
-- [x] html-to-md 스토어 정리 완료 → [docs/plan](docs/plan/2026-02-04_fix-logout-cleanup.md)
 
 ---
 
