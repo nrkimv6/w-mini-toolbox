@@ -23,13 +23,13 @@
 ### 3. 커스텀 도메인 연결
 - [ ] Cloudflare Pages 프로젝트 설정
 - [ ] Custom domains 섹션
-- [ ] `toolbox.woory.day` 추가
+- [ ] `tool.woory.day` 추가
 - [ ] DNS 레코드 자동 생성 확인
 
 ### 4. 배포 확인
 - [ ] GitHub에 push 후 자동 배포 트리거 확인
 - [ ] 빌드 로그 확인
-- [ ] 배포 완료 후 URL 접속: `https://toolbox.woory.day`
+- [ ] 배포 완료 후 URL 접속: `https://tool.woory.day`
 
 ---
 

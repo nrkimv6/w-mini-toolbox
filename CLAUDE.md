@@ -12,7 +12,7 @@
 | 데이터베이스 | Supabase |
 | 모바일 | - |
 | 배포 | Cloudflare Workers |
-| URL | mini-toolbox.orangepie2236.workers.dev |
+| URL | https://tool.woory.day |
 | 주요 라이브러리 | turndown (HTML→MD), DOMPurify (XSS 방지), marked (MD 렌더링) |
 
 ## 프로젝트 특성

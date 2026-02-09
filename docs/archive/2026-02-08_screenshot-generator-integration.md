@@ -13,7 +13,7 @@
 
 ## 개요
 
-screenshot-generator(screenshot.woory.day)를 mini-toolbox(toolbox.woory.day)의 `/screenshot` 라우트로 통합한다.
+screenshot-generator(screenshot.woory.day)를 mini-toolbox(tool.woory.day)의 `/screenshot` 라우트로 통합한다.
 
 **근거:**
 - 동일 기술 스택 (SvelteKit 2 + Svelte 5 + Tailwind CSS)
@@ -33,7 +33,7 @@ screenshot-generator(screenshot.woory.day)를 mini-toolbox(toolbox.woory.day)의
 | P1 | i18n 통합 | screenshot-generator의 i18n을 mini-toolbox 공통으로 승격 | 중간 |
 | P1 | UI 통합 | 토스트(svelte-sonner), 다이얼로그 등 공통 컴포넌트 활용 | 중간 |
 | P2 | SSR 방어 | html2canvas 동적 import, browser guard 처리 | 낮음 |
-| P2 | 리다이렉트 | screenshot.woory.day → toolbox.woory.day/screenshot 설정 | 낮음 |
+| P2 | 리다이렉트 | screenshot.woory.day → tool.woory.day/screenshot 설정 | 낮음 |
 | P3 | screenshot-generator 프로젝트 정리 | deprecated 표시 또는 아카이브 | 낮음 |
 
 ## 기술적 고려사항

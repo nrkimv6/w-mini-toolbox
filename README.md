@@ -39,7 +39,7 @@ npm run build
 
 Cloudflare Pages로 자동 배포됩니다.
 
-- **도메인**: `toolbox.woory.day`
+- **도메인**: `tool.woory.day`
 - **Build command**: `npm run build`
 - **Build output**: `.svelte-kit/cloudflare`
 

@@ -191,7 +191,7 @@
 
 ## Phase 6: 후속 정리 (P2-P3, 별도 plan 가능)
 
-27. [x] **도메인 리다이렉트** (MANUAL_TASKS) — screenshot.woory.day → toolbox.woory.day/screenshot
+27. [x] **도메인 리다이렉트** (MANUAL_TASKS) — screenshot.woory.day → tool.woory.day/screenshot
     - [x] Cloudflare Workers/Pages 리다이렉트 규칙 설정
     - [x] 301 영구 리다이렉트 권장
 
