@@ -4,7 +4,6 @@
 > 아카이브됨
 > 계획서: [plan](../archive/2026-02-08_screenshot-generator-integration.md)
 > 대상 프로젝트: mini-toolbox
-> 세부계획: 검토됨
 > 진행률: 28/28 (100%)
 
 ## Phase 1: 의존성 및 기반 설정 (P0)

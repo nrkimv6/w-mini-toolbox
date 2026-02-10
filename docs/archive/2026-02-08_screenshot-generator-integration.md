@@ -3,7 +3,6 @@
 > 작성일: 2026-02-08
 > 대상 프로젝트: mini-toolbox, screenshot-generator
 > 상태: 아카이브됨(2026-02-08_screenshot-generator-integration_todo.md)
-> 세부계획: 검토됨
 > 진행률: 0/22 (0%)
 >
 > **실행 TODO:**
