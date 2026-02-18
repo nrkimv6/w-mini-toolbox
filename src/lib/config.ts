@@ -1,6 +1,6 @@
 import { env } from '$env/dynamic/public';
 
-export const APP_VERSION = '0.1.0';
+export const APP_VERSION = __APP_VERSION__;
 
 export const config = {
 	supabase: {

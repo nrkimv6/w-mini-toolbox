@@ -2,6 +2,7 @@
 	import { tools } from '$lib/data';
 	import { FileText, Smartphone } from 'lucide-svelte';
 	import type { ComponentType } from 'svelte';
+	import { APP_VERSION } from '$lib/config';
 
 	// Icon mapping
 	const iconMap: Record<string, ComponentType> = {
@@ -35,4 +36,5 @@
 			</a>
 		{/each}
 	</div>
+	<p class="mt-8 text-xs text-gray-400">v{APP_VERSION}</p>
 </div>
