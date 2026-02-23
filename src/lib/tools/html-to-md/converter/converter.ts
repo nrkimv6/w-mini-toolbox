@@ -3,20 +3,9 @@ import { detectContentType, getRuleDisplayName, type DetectionResult } from '../
 
 // 규칙 타입 정의
 export type SourceRule ='default' | 'gemini' | 'notion' | 'claude' | 'chatgpt';
-// | 'claude_desktop_drag' | 'claude_drag_text' | 'claude_drag_html' | 'claude_dev_html' | 'chatgpt_desktop_drag' | 'chatgpt_drag_text' | 'chatgpt_drag_html' | 'chatgpt_dev_html';
 
 // 규칙별 설정
 const ruleConfigs = {
-	// auto: {
-	// 	name: '🤖 자동 감지',
-	// 	description: '입력 내용을 분석하여 최적 규칙 자동 선택',
-	// 	config: {
-	// 		headingStyle: 'atx' as const,
-	// 		bulletListMarker: '-' as const,
-	// 		codeBlockStyle: 'fenced' as const
-	// 	},
-	// 	postProcess: (markdown: string) => markdown // Will be replaced by detected rule
-	// },
 	default: {
 		name: '🔧 범용 HTML',
 		description: '일반적인 HTML to Markdown 변환',
@@ -121,161 +110,6 @@ const ruleConfigs = {
 				.replace(/^\\\s*/gm, '');
 		}
 	}
-	// claude_desktop_drag: {
-	// 	name: '🤖 Claude Desktop 드래그',
-	// 	description: 'Claude Desktop 앱에서 드래그한 HTML 내용 변환',
-	// 	config: {
-	// 		headingStyle: 'atx' as const,
-	// 		bulletListMarker: '-' as const,
-	// 		codeBlockStyle: 'fenced' as const
-	// 	},
-	// 	postProcess: (markdown: string) => {
-	// 		return markdown
-	// 			// Claude Desktop 특유의 HTML 요소 정리
-	// 			.replace(/class="[^"]*"/g, '')
-	// 			.replace(/style="[^"]*"/g, '')
-	// 			.replace(/data-[^=]*="[^"]*"/g, '')
-	// 			.replace(/aria-[^=]*="[^"]*"/g, '')
-	// 			.replace(/role="[^"]*"/g, '')
-	// 			.replace(/tabindex="[^"]*"/g, '')
-	// 			// 백슬래시 이스케이핑 정리
-	// 			.replace(/\\{4,}/g, '\\')
-	// 			.replace(/\\{3}/g, '\\')
-	// 			.replace(/\\{2}/g, '\\')
-	// 			.replace(/\\([#>[\]_*`])/g, '$1')
-	// 			.replace(/^\\\s*/gm, '');
-	// 	}
-	// },
-	// claude_drag_text: {
-	// 	name: '🤖 Claude 드래그 텍스트',
-	// 	description: 'Claude에서 드래그한 텍스트 내용 변환',
-	// 	config: {
-	// 		headingStyle: 'atx' as const,
-	// 		bulletListMarker: '-' as const,
-	// 		codeBlockStyle: 'fenced' as const
-	// 	},
-	// 	postProcess: (markdown: string) => {
-	// 		return markdown
-	// 			// 텍스트 기반이므로 최소한의 정리만
-	// 			.replace(/\n{3,}/g, '\n\n')
-	// 			.trim();
-	// 	}
-	// },
-	// claude_drag_html: {
-	// 	name: '🤖 Claude 드래그 HTML',
-	// 	description: 'Claude에서 드래그한 HTML 내용 변환',
-	// 	config: {
-	// 		headingStyle: 'atx' as const,
-	// 		bulletListMarker: '-' as const,
-	// 		codeBlockStyle: 'fenced' as const
-	// 	},
-	// 	postProcess: (markdown: string) => {
-	// 		return markdown
-	// 			// Claude 특유의 HTML 구조 정리
-	// 			.replace(/class="[^"]*"/g, '')
-	// 			.replace(/style="[^"]*"/g, '')
-	// 			.replace(/<div[^>]*>/g, '')
-	// 			.replace(/<\/div>/g, '')
-	// 			.replace(/\\([*_`#>])/g, '$1')
-	// 			.replace(/^\\\s*/gm, '');
-	// 	}
-	// },
-	// claude_dev_html: {
-	// 	name: '🤖 Claude 개발자 도구',
-	// 	description: 'Claude 개발자 도구에서 복사한 HTML 변환',
-	// 	config: {
-	// 		headingStyle: 'atx' as const,
-	// 		bulletListMarker: '-' as const,
-	// 		codeBlockStyle: 'fenced' as const
-	// 	},
-	// 	postProcess: (markdown: string) => {
-	// 		return markdown
-	// 			// 개발자 도구의 복잡한 HTML 속성 제거
-	// 			.replace(/class="[^"]*"/g, '')
-	// 			.replace(/style="[^"]*"/g, '')
-	// 			.replace(/data-[^=]*="[^"]*"/g, '')
-	// 			.replace(/id="[^"]*"/g, '')
-	// 			.replace(/<span[^>]*>/g, '')
-	// 			.replace(/<\/span>/g, '')
-	// 			.replace(/\\([*_`#>])/g, '$1');
-	// 	}
-	// },
-	// chatgpt_desktop_drag: {
-	// 	name: '💬 ChatGPT Desktop 드래그',
-	// 	description: 'ChatGPT Desktop 앱에서 드래그한 HTML 내용 변환',
-	// 	config: {
-	// 		headingStyle: 'atx' as const,
-	// 		bulletListMarker: '-' as const,
-	// 		codeBlockStyle: 'fenced' as const
-	// 	},
-	// 	postProcess: (markdown: string) => {
-	// 		return markdown
-	// 			// ChatGPT Desktop 특유의 요소 정리
-	// 			.replace(/class="[^"]*"/g, '')
-	// 			.replace(/style="[^"]*"/g, '')
-	// 			.replace(/data-[^=]*="[^"]*"/g, '')
-	// 			.replace(/aria-[^=]*="[^"]*"/g, '')
-	// 			// ChatGPT의 메타 속성 제거
-	// 			.replace(/property="[^"]*"/g, '')
-	// 			.replace(/content="[^"]*"/g, '')
-	// 			.replace(/\\([*_`#>])/g, '$1');
-	// 	}
-	// },
-	// chatgpt_drag_text: {
-	// 	name: '💬 ChatGPT 드래그 텍스트',
-	// 	description: 'ChatGPT에서 드래그한 텍스트 내용 변환',
-	// 	config: {
-	// 		headingStyle: 'atx' as const,
-	// 		bulletListMarker: '-' as const,
-	// 		codeBlockStyle: 'fenced' as const
-	// 	},
-	// 	postProcess: (markdown: string) => {
-	// 		return markdown
-	// 			// 텍스트 기반 정리
-	// 			.replace(/\n{3,}/g, '\n\n')
-	// 			.trim();
-	// 	}
-	// },
-	// chatgpt_drag_html: {
-	// 	name: '💬 ChatGPT 드래그 HTML',
-	// 	description: 'ChatGPT에서 드래그한 HTML 내용 변환',
-	// 	config: {
-	// 		headingStyle: 'atx' as const,
-	// 		bulletListMarker: '-' as const,
-	// 		codeBlockStyle: 'fenced' as const
-	// 	},
-	// 	postProcess: (markdown: string) => {
-	// 		return markdown
-	// 			// ChatGPT HTML 구조 정리
-	// 			.replace(/class="[^"]*"/g, '')
-	// 			.replace(/style="[^"]*"/g, '')
-	// 			.replace(/<div[^>]*>/g, '')
-	// 			.replace(/<\/div>/g, '')
-	// 			.replace(/\\([*_`#>])/g, '$1');
-	// 	}
-	// },
-	// chatgpt_dev_html: {
-	// 	name: '💬 ChatGPT 개발자 도구',
-	// 	description: 'ChatGPT 개발자 도구에서 복사한 HTML 변환',
-	// 	config: {
-	// 		headingStyle: 'atx' as const,
-	// 		bulletListMarker: '-' as const,
-	// 		codeBlockStyle: 'fenced' as const
-	// 	},
-	// 	postProcess: (markdown: string) => {
-	// 		return markdown
-	// 			// ChatGPT 개발자 도구의 복잡한 구조 정리
-	// 			.replace(/class="[^"]*"/g, '')
-	// 			.replace(/style="[^"]*"/g, '')
-	// 			.replace(/data-[^=]*="[^"]*"/g, '')
-	// 			.replace(/id="[^"]*"/g, '')
-	// 			.replace(/<span[^>]*>/g, '')
-	// 			.replace(/<\/span>/g, '')
-	// 			.replace(/property="[^"]*"/g, '')
-	// 			.replace(/content="[^"]*"/g, '')
-	// 			.replace(/\\([*_`#>])/g, '$1');
-	// 	}
-	// }
 };
 
 // 현재 활성 규칙을 저장하는 변수
@@ -345,8 +179,7 @@ function parseGeminiConversationsFromHtml(htmlContent: string): Array<{type: 'us
 								responseContainers.length > 0;
 		
 		if (!hasAllSelectors) {
-			console.log('Gemini parsing: Missing required selectors, using fallback');
-			return parseConversationsFallback(htmlContent);
+				return parseConversationsFallback(htmlContent);
 		}
 		
 		// 사용자 질문 추출 (두 셀렉터 모두 사용)
@@ -374,8 +207,7 @@ function parseGeminiConversationsFromHtml(htmlContent: string): Array<{type: 'us
 		
 		// 파싱 결과가 없으면 폴백 사용
 		if (conversations.length === 0) {
-			console.log('Gemini parsing: No conversations found, using fallback');
-			return parseConversationsFallback(htmlContent);
+				return parseConversationsFallback(htmlContent);
 		}
 		
 	} catch (error) {
@@ -566,13 +398,11 @@ export function convertHtmlToMarkdown(html: string): string {
 			const chatWindowContentMatch = processedHtml.match(/<chat-window-content[^>]*>([\s\S]*?)<\/chat-window-content>/i);
 			if (chatWindowContentMatch) {
 				processedHtml = chatWindowContentMatch[1];
-				console.log('Extracted chat-window-content:', processedHtml.substring(0, 200) + '...');
-			} else {
+				} else {
 				// chat-window-content가 없으면 infinite-scroller로 폴백
 				const infiniteScrollerMatch = processedHtml.match(/<infinite-scroller[^>]*>([\s\S]*?)<\/infinite-scroller>/i);
 				if (infiniteScrollerMatch) {
 					processedHtml = infiniteScrollerMatch[1];
-					console.log('Fallback to infinite-scroller:', processedHtml.substring(0, 200) + '...');
 				}
 			}
 			// _ngcontent 속성 제거
@@ -653,6 +483,5 @@ export function getLastDetectionResult(): DetectionResult | null {
 
 // 현재 유효 규칙 조회 (자동 감지 시 실제 적용된 규칙)
 export function getEffectiveRule(): SourceRule {
-	console.log('getEffectiveRule', currentRule);
 	return currentRule;
 }
