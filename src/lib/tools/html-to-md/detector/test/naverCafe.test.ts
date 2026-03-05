@@ -1,10 +1,13 @@
+/**
+ * @vitest-environment jsdom
+ */
 import { describe, it, expect } from 'vitest';
 import { detectContentSource } from '../contentSourceDetector.js';
 import { convertHtmlToMarkdown, setSourceRule, setOutputRule } from '../../converter/converter.js';
 import { applyOutputRule } from '../../converter/outputProcessor.js';
 
 describe('Naver Cafe HTML Parsing', () => {
-    const mockHtml = `
+	const mockHtml = `
 		<div class="se-viewer">
 			<h3 class="title_text">네이버 카페 게시글 제목</h3>
 			<div class="WriterInfo">
@@ -59,43 +62,43 @@ describe('Naver Cafe HTML Parsing', () => {
 		</div>
 	`;
 
-    it('should detect Naver Cafe content source', () => {
-        const result = detectContentSource(mockHtml);
-        expect(result.source).toBe('naver_cafe');
-        expect(result.confidence).toBeGreaterThan(0.7);
-    });
+	it('should detect Naver Cafe content source', () => {
+		const result = detectContentSource(mockHtml);
+		expect(result.source).toBe('naver_cafe');
+		expect(result.confidence).toBeGreaterThan(0.7);
+	});
 
-    it('should convert Naver Cafe HTML to markdown correctly', () => {
-        setSourceRule('naver_cafe');
-        setOutputRule('naver_cafe');
+	it('should convert Naver Cafe HTML to markdown correctly', () => {
+		setSourceRule('naver_cafe');
+		setOutputRule('naver_cafe');
 
-        let markdown = convertHtmlToMarkdown(mockHtml);
-        markdown = applyOutputRule(markdown, 'naver_cafe');
+		let markdown = convertHtmlToMarkdown(mockHtml);
+		markdown = applyOutputRule(markdown, 'naver_cafe');
 
-        // 메타데이터 검증
-        expect(markdown).toContain('# 네이버 카페 게시글 제목');
-        expect(markdown).toContain('**작성자:** 홍길동');
-        expect(markdown).toContain('**작성일:** 2023.05.20. 14:30');
-        expect(markdown).toContain('**조회수:** 1,234');
-        expect(markdown).toContain('#정보 #네이버');
+		// 메타데이터 검증
+		expect(markdown).toContain('# 네이버 카페 게시글 제목');
+		expect(markdown).toContain('**작성자:** 홍길동');
+		expect(markdown).toContain('**작성일:** 2023.05.20. 14:30');
+		expect(markdown).toContain('**조회수:** 1,234');
+		expect(markdown).toContain('#정보 #네이버');
 
-        // 본문 검증
-        expect(markdown).toContain('일반 텍스트 1번째 단락');
-        expect(markdown).toContain('일반 텍스트 2번째 단락 **굵은 글씨**');
-        expect(markdown).toContain('![image](https://example.com/image1.jpg)');
-        expect(markdown).toContain('> 인용구입니다.');
-        expect(markdown).toContain('## 헤딩 텍스트입니다.');
-        expect(markdown).toContain('[네이버 메인](https://naver.com)');
+		// 본문 검증
+		expect(markdown).toContain('일반 텍스트 1번째 단락');
+		expect(markdown).toContain('일반 텍스트 2번째 단락 **굵은 글씨**');
+		expect(markdown).toContain('![image](https://example.com/image1.jpg)');
+		expect(markdown).toContain('> 인용구입니다.');
+		expect(markdown).toContain('## 헤딩 텍스트입니다.');
+		expect(markdown).toContain('[네이버 메인](https://naver.com)');
 
-        // 댓글 검증
-        expect(markdown).toContain('### 💬 댓글');
-        expect(markdown).toContain('> **김댓글**:');
-        expect(markdown).toContain('> 좋은 정보 감사합니다!');
-        expect(markdown).toContain('> *2023.05.20. 15:00*');
+		// 댓글 검증
+		expect(markdown).toContain('### 💬 댓글');
+		expect(markdown).toContain('> **김댓글**:');
+		expect(markdown).toContain('> 좋은 정보 감사합니다!');
+		expect(markdown).toContain('> *2023.05.20. 15:00*');
 
-        // 대댓글 검증
-        expect(markdown).toContain('> > **홍길동**:');
-        expect(markdown).toContain('> > 감사합니다');
-        expect(markdown).toContain('> > *2023.05.20. 15:10*');
-    });
+		// 대댓글 검증
+		expect(markdown).toContain('> > **홍길동**:');
+		expect(markdown).toContain('> > 감사합니다');
+		expect(markdown).toContain('> > *2023.05.20. 15:10*');
+	});
 });

@@ -1,0 +1,117 @@
+
+[1m[46m RUN [49m[22m [36mv4.0.18 [39m[90mD:/work/project/service/wtools/mini-toolbox[39m
+
+[90mstdout[2m | src/lib/tools/html-to-md/detector/test/naverCafe.test.ts[2m > [22m[2mNaver Cafe HTML Parsing[2m > [22m[2mshould detect Naver Cafe content source
+[22m[39m[Content Source Detection] 遺꾩꽍 ?쒖옉: {
+  hasHtml: [33mtrue[39m,
+  htmlLength: [33m1746[39m,
+  hasText: [33mfalse[39m,
+  textLength: [33m0[39m,
+  textPreview: [32m'N/A'[39m
+}
+[Content Source] Claude ?먯닔: [33m0[39m
+[Content Source] ChatGPT ?먯닔: [33m0[39m
+[Content Source] Gemini ?먯닔: { html: [33m0[39m, text: [33m0[39m, final: [33m0[39m }
+[Content Source] Notion ?먯닔: [33m0[39m
+[Content Source] Recipe ?먯닔: [33m0[39m
+[Content Source] Blog ?먯닔: [33m0[39m
+[Content Source] Naver Cafe ?먯닔: [33m0[39m
+[Content Source] Doc ?먯닔: [33m0[39m
+[Content Source] 湲곕낯媛?諛섑솚: generic
+
+[90mstdout[2m | src/lib/tools/html-to-md/detector/test/naverCafe.test.ts[2m > [22m[2mNaver Cafe HTML Parsing[2m > [22m[2mshould convert Naver Cafe HTML to markdown correctly
+[22m[39mProcessing with: {
+  rule: [32m'naver_cafe'[39m,
+  inputFormat: [90mundefined[39m,
+  inputType: [90mundefined[39m,
+  isHtml: [33mfalse[39m,
+  endsWithHtml: [33mfalse[39m
+}
+
+stderr | src/lib/tools/html-to-md/detector/test/naverCafe.test.ts > Naver Cafe HTML Parsing > should convert Naver Cafe HTML to markdown correctly
+Naver Cafe parsing error: ReferenceError: DOMParser is not defined
+    at convertNaverCafeToFormat (D:/work/project/service/wtools/mini-toolbox/src/lib/tools/html-to-md/converter/converter.ts:374:18)
+    at convertHtmlToMarkdown (D:/work/project/service/wtools/mini-toolbox/src/lib/tools/html-to-md/converter/converter.ts:556:19)
+    at D:/work/project/service/wtools/mini-toolbox/src/lib/tools/html-to-md/detector/test/naverCafe.test.ts:72:24
+    at file:///C:/Users/Narang/AppData/Local/npm-cache/_npx/69c381f8ad94b576/node_modules/@vitest/runner/dist/index.js:145:11
+    at file:///C:/Users/Narang/AppData/Local/npm-cache/_npx/69c381f8ad94b576/node_modules/@vitest/runner/dist/index.js:915:26
+    at file:///C:/Users/Narang/AppData/Local/npm-cache/_npx/69c381f8ad94b576/node_modules/@vitest/runner/dist/index.js:1243:20
+    at new Promise (<anonymous>)
+    at runWithTimeout (file:///C:/Users/Narang/AppData/Local/npm-cache/_npx/69c381f8ad94b576/node_modules/@vitest/runner/dist/index.js:1209:10)
+    at file:///C:/Users/Narang/AppData/Local/npm-cache/_npx/69c381f8ad94b576/node_modules/@vitest/runner/dist/index.js:1653:37
+    at Traces.$ (file:///C:/Users/Narang/AppData/Local/npm-cache/_npx/69c381f8ad94b576/node_modules/vitest/dist/chunks/traces.CCmnQaNT.js:142:27)
+
+ [31m??[39m src/lib/tools/html-to-md/detector/test/naverCafe.test.ts [2m([22m[2m2 tests[22m[2m | [22m[31m2 failed[39m[2m)[22m[32m 27[2mms[22m[39m
+[31m     [31m횞[31m should detect Naver Cafe content source[39m[32m 8[2mms[22m[39m
+[31m     [31m횞[31m should convert Naver Cafe HTML to markdown correctly[39m[32m 17[2mms[22m[39m
+
+??렞??렞??렞??[39m Failed Tests 2 ??렞??렞??렞??[39m
+
+ FAIL  src/lib/tools/html-to-md/detector/test/naverCafe.test.ts > Naver Cafe HTML Parsing > should detect Naver Cafe content source
+AssertionError: expected 'generic' to be 'naver_cafe' // Object.is equality
+
+Expected: "naver_cafe"
+Received: "generic"
+
+ ??[22m src/lib/tools/html-to-md/detector/test/naverCafe.test.ts:64:31
+     62|     it('should detect Naver Cafe content source', () => {
+     63|         const result = detectContentSource(mockHtml);
+     64|         expect(result.source).toBe('naver_cafe');
+       |                               ^
+     65|         expect(result.confidence).toBeGreaterThan(0.7);
+     66|     });
+
+??렞??렞??렞??렞??렞??렞??렞??렞??렞??렞??렞??렞[1/2]??[22m
+
+ FAIL  src/lib/tools/html-to-md/detector/test/naverCafe.test.ts > Naver Cafe HTML Parsing > should convert Naver Cafe HTML to markdown correctly
+AssertionError: expected '### ?ㅼ씠踰?移댄럹 寃뚯떆湲 ?쒕ぉ\n\n?띻만??n\n2023.05.2?? to contain '**?묒꽦??** ?띻만??
+
+- Expected
++ Received
+
+- **?묒꽦??** ?띻만??[39m
++ ### ?ㅼ씠踰?移댄럹 寃뚯떆湲 ?쒕ぉ
++
++ ?띻만??[39m
++
++ 2023.05.20. 14:30 議고쉶 1,234
++
++ ?쇰컲 ?띿뒪??1踰덉㎏ ?⑤씫
++
++ ?쇰컲 ?띿뒪??2踰덉㎏ ?⑤씫 **援듭? 湲??*
++
++ ![](https://example.com/image1.jpg)
++
++ ?몄슜援ъ엯?덈떎.
++
++ ## 
++
++ ?ㅻ뵫 ?띿뒪?몄엯?덈떎.
++
++ [
++
++ ?ㅼ씠踰?硫붿씤
++
++ ](https://naver.com)
++
++ #?뺣낫 #?ㅼ씠踰?[39m
++
++ -   源?볤? 醫뗭? ?뺣낫 媛먯궗?⑸땲?? 2023.05.20. 15:00
++ -   ?띻만??媛먯궗?⑸땲??2023.05.20. 15:10
+
+ ??[22m src/lib/tools/html-to-md/detector/test/naverCafe.test.ts:77:26
+     75|         // 硫뷀??곗씠??寃利?[39m
+     76|         expect(markdown).toContain('# ?ㅼ씠踰?移댄럹 寃뚯떆湲 ?쒕ぉ');
+     77|         expect(markdown).toContain('**?묒꽦??** ?띻만??);
+       |                          ^
+     78|         expect(markdown).toContain('**?묒꽦??** 2023.05.20. 14:30');
+     79|         expect(markdown).toContain('**議고쉶??** 1,234');
+
+??렞??렞??렞??렞??렞??렞??렞??렞??렞??렞??렞??렞[2/2]??[22m
+
+
+[2m Test Files [22m [1m[31m1 failed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[31m2 failed[39m[22m[90m (2)[39m
+[2m   Start at [22m 01:26:39
+[2m   Duration [22m 458ms[2m (transform 148ms, setup 0ms, import 230ms, tests 27ms, environment 0ms)[22m
+

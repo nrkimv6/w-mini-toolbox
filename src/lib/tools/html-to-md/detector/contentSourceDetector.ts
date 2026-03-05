@@ -412,9 +412,9 @@ function calculateNaverCafeScore(html: string): number {
   // 1차 식별자 (높은 신뢰도) - 네이버 카페 특유의 구조
   const primaryPatterns = [
     'cafe.naver.com',
-    '.se-viewer',
-    'h3.title_text',
-    '.WriterInfo'
+    'se-viewer',
+    'title_text',
+    'WriterInfo'
   ];
 
   for (const pattern of primaryPatterns) {
@@ -425,11 +425,11 @@ function calculateNaverCafeScore(html: string): number {
 
   // 2차 식별자 (중간 신뢰도)
   const secondaryPatterns = [
-    '.se-main-container',
-    '.article_info',
-    '.comment_list',
-    '.se-text-paragraph',
-    '.se-image-resource'
+    'se-main-container',
+    'article_info',
+    'comment_list',
+    'se-text-paragraph',
+    'se-image-resource'
   ];
 
   for (const pattern of secondaryPatterns) {
