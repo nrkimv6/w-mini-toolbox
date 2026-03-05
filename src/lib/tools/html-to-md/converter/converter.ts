@@ -2,7 +2,7 @@ import TurndownService from 'turndown';
 import { detectContentType, getRuleDisplayName, type DetectionResult } from '../detector/contentDetector.js';
 
 // 규칙 타입 정의
-export type SourceRule ='default' | 'gemini' | 'notion' | 'claude' | 'chatgpt';
+export type SourceRule = 'default' | 'gemini' | 'notion' | 'claude' | 'chatgpt' | 'naver_cafe';
 
 // 규칙별 설정
 const ruleConfigs = {
@@ -39,7 +39,7 @@ const ruleConfigs = {
 		}
 	},
 	notion: {
-		name: '📝 Notion', 
+		name: '📝 Notion',
 		description: 'Notion 페이지 내용 변환에 최적화',
 		config: {
 			headingStyle: 'atx' as const,
@@ -109,6 +109,16 @@ const ruleConfigs = {
 				.replace(/\\([#>[\]_*`])/g, '$1')
 				.replace(/^\\\s*/gm, '');
 		}
+	},
+	naver_cafe: {
+		name: '☕ 네이버 카페',
+		description: '네이버 카페 게시글 변환에 최적화',
+		config: {
+			headingStyle: 'atx' as const,
+			bulletListMarker: '-' as const,
+			codeBlockStyle: 'fenced' as const
+		},
+		postProcess: (markdown: string) => markdown
 	}
 };
 
@@ -151,7 +161,7 @@ export function getCurrentSourceRule(): SourceRule {
 }
 
 // 규칙 목록 가져오기
-export function getAvailableRules(): Array<{key: SourceRule, name: string, description: string}> {
+export function getAvailableRules(): Array<{ key: SourceRule, name: string, description: string }> {
 	return Object.entries(ruleConfigs).map(([key, config]) => ({
 		key: key as SourceRule,
 		name: config.name,
@@ -160,80 +170,80 @@ export function getAvailableRules(): Array<{key: SourceRule, name: string, descr
 }
 
 // Gemini 대화 파싱 함수 - HTML에서 CSS selector를 사용하여 파싱
-function parseGeminiConversationsFromHtml(htmlContent: string): Array<{type: 'user' | 'ai', content: string}> {
-	const conversations: Array<{type: 'user' | 'ai', content: string}> = [];
-	
+function parseGeminiConversationsFromHtml(htmlContent: string): Array<{ type: 'user' | 'ai', content: string }> {
+	const conversations: Array<{ type: 'user' | 'ai', content: string }> = [];
+
 	try {
 		// HTML을 파싱하기 위해 DOMParser 사용
 		const parser = new DOMParser();
 		const doc = parser.parseFromString(htmlContent, 'text/html');
-		
+
 		// 3개 셀렉터 모두 확인 - 하나라도 없으면 폴백 사용
 		const userQueryContainers = doc.querySelectorAll('.user-query-container');
 		const userQueryBubbleContainers = doc.querySelectorAll('.user-query-bubble-container');
 		const responseContainers = doc.querySelectorAll('.response-container');
-		
+
 		// 3개 셀렉터가 모두 존재하는지 확인
-		const hasAllSelectors = userQueryContainers.length > 0 && 
-								userQueryBubbleContainers.length > 0 && 
-								responseContainers.length > 0;
-		
+		const hasAllSelectors = userQueryContainers.length > 0 &&
+			userQueryBubbleContainers.length > 0 &&
+			responseContainers.length > 0;
+
 		if (!hasAllSelectors) {
-				return parseConversationsFallback(htmlContent);
+			return parseConversationsFallback(htmlContent);
 		}
-		
+
 		// 사용자 질문 추출 (두 셀렉터 모두 사용)
 		const userQueries = doc.querySelectorAll('.user-query-container, .user-query-bubble-container');
 		const aiResponses = doc.querySelectorAll('.response-container');
-		
+
 		// 사용자 질문과 AI 응답을 순서대로 매칭
 		const maxLength = Math.max(userQueries.length, aiResponses.length);
-		
+
 		for (let i = 0; i < maxLength; i++) {
 			if (userQueries[i]) {
 				const userContent = userQueries[i].textContent?.trim() || '';
 				if (userContent) {
-					conversations.push({type: 'user', content: userContent});
+					conversations.push({ type: 'user', content: userContent });
 				}
 			}
-			
+
 			if (aiResponses[i]) {
 				const aiContent = aiResponses[i].textContent?.trim() || '';
 				if (aiContent) {
-					conversations.push({type: 'ai', content: aiContent});
+					conversations.push({ type: 'ai', content: aiContent });
 				}
 			}
 		}
-		
+
 		// 파싱 결과가 없으면 폴백 사용
 		if (conversations.length === 0) {
-				return parseConversationsFallback(htmlContent);
+			return parseConversationsFallback(htmlContent);
 		}
-		
+
 	} catch (error) {
 		console.error('Gemini conversation parsing error:', error);
 		return parseConversationsFallback(htmlContent);
 	}
-	
+
 	return conversations;
 }
 
 // 폴백 파싱 함수 - selector가 작동하지 않을 때 사용
-function parseConversationsFallback(content: string): Array<{type: 'user' | 'ai', content: string}> {
+function parseConversationsFallback(content: string): Array<{ type: 'user' | 'ai', content: string }> {
 	// 마크다운으로 변환된 내용에서 패턴을 찾아 파싱
 	const lines = content.split('\n');
-	const conversations: Array<{type: 'user' | 'ai', content: string}> = [];
+	const conversations: Array<{ type: 'user' | 'ai', content: string }> = [];
 	let currentContent = '';
 	let currentType: 'user' | 'ai' = 'user';
 	let isFirstEntry = true;
-	
+
 	for (const line of lines) {
 		if (line.trim()) {
 			if (isFirstEntry) {
 				currentType = 'user';
 				isFirstEntry = false;
 			} else if (currentContent.length > 200) { // 임의의 구분점
-				conversations.push({type: currentType, content: currentContent.trim()});
+				conversations.push({ type: currentType, content: currentContent.trim() });
 				currentContent = line;
 				currentType = currentType === 'user' ? 'ai' : 'user';
 			} else {
@@ -241,11 +251,11 @@ function parseConversationsFallback(content: string): Array<{type: 'user' | 'ai'
 			}
 		}
 	}
-	
+
 	if (currentContent.trim()) {
-		conversations.push({type: currentType, content: currentContent.trim()});
+		conversations.push({ type: currentType, content: currentContent.trim() });
 	}
-	
+
 	return conversations;
 }
 
@@ -257,13 +267,13 @@ function convertGeminiToFormat1(html: string): string {
 	if (chatWindowContentMatch) {
 		processedHtml = chatWindowContentMatch[1];
 	}
-	
+
 	const conversations = parseGeminiConversationsFromHtml(processedHtml);
 	const now = new Date();
 	const title = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-	
+
 	let result = `# ${title}\n\n`;
-	
+
 	conversations.forEach((conv, index) => {
 		if (conv.type === 'user') {
 			result += `---\n\n## 사용자\n\n${conv.content}\n\n`;
@@ -271,7 +281,7 @@ function convertGeminiToFormat1(html: string): string {
 			result += `---\n\n## AI\n\n${conv.content}\n\n`;
 		}
 	});
-	
+
 	return result.trim();
 }
 
@@ -282,18 +292,18 @@ function convertGeminiToFormat2(html: string): string {
 	if (chatWindowContentMatch) {
 		processedHtml = chatWindowContentMatch[1];
 	}
-	
+
 	const conversations = parseGeminiConversationsFromHtml(processedHtml);
 	const now = new Date();
 	const title = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-	
+
 	let result = `# ${title}\n\n`;
 	let questionCount = 1;
-	
+
 	for (let i = 0; i < conversations.length; i += 2) {
 		const question = conversations[i];
 		const answer = conversations[i + 1];
-		
+
 		if (question && question.type === 'user') {
 			result += `## 질문${questionCount}\n\n${question.content}\n\n`;
 			if (answer && answer.type === 'ai') {
@@ -302,7 +312,7 @@ function convertGeminiToFormat2(html: string): string {
 			questionCount++;
 		}
 	}
-	
+
 	return result.replace(/---\n\n$/, '').trim();
 }
 
@@ -313,16 +323,16 @@ function convertGeminiToFormat3(html: string): string {
 	if (chatWindowContentMatch) {
 		processedHtml = chatWindowContentMatch[1];
 	}
-	
+
 	const conversations = parseGeminiConversationsFromHtml(processedHtml);
-	
+
 	let result = '';
 	let questionCount = 1;
-	
+
 	for (let i = 0; i < conversations.length; i += 2) {
 		const question = conversations[i];
 		const answer = conversations[i + 1];
-		
+
 		if (question && question.type === 'user') {
 			result += `## 질문${questionCount}\n> ${question.content}\n\n`;
 			if (answer && answer.type === 'ai') {
@@ -331,7 +341,7 @@ function convertGeminiToFormat3(html: string): string {
 			questionCount++;
 		}
 	}
-	
+
 	return result.replace(/---\n\n$/, '').trim();
 }
 
@@ -342,11 +352,11 @@ function convertGeminiToFormat4(html: string): string {
 	if (chatWindowContentMatch) {
 		processedHtml = chatWindowContentMatch[1];
 	}
-	
+
 	const conversations = parseGeminiConversationsFromHtml(processedHtml);
-	
+
 	let result = '';
-	
+
 	conversations.forEach((conv, index) => {
 		if (conv.type === 'user') {
 			result += `**사용자**\n\`\`\`\n${conv.content}\n\`\`\`\n\n`;
@@ -354,8 +364,159 @@ function convertGeminiToFormat4(html: string): string {
 			result += `**Gemini**\n\`\`\`\n${conv.content}\n\`\`\`\n\n`;
 		}
 	});
-	
+
 	return result.trim();
+}
+
+// 네이버 카페 파싱 함수
+function convertNaverCafeToFormat(html: string): string {
+	try {
+		const parser = new DOMParser();
+		const doc = parser.parseFromString(html, 'text/html');
+
+		let result = '';
+
+		// 1. 메타 데이터 추출
+		const title = doc.querySelector('h3.title_text')?.textContent?.trim() || '';
+		const author = doc.querySelector('.WriterInfo .nick_box .nickname')?.textContent?.trim() || '';
+		const date = doc.querySelector('.WriterInfo .article_info .date')?.textContent?.trim() || '';
+		const viewsElement = doc.querySelector('.WriterInfo .article_info .count');
+		const views = viewsElement ? viewsElement.textContent?.replace('조회', '')?.trim() : '';
+
+		// 태그 추출 (옵시디언 네이티브 태그)
+		const tags: string[] = [];
+		const tagElements = doc.querySelectorAll('.ArticleTagList .tag_link');
+		tagElements.forEach(el => {
+			const tagText = el.textContent?.trim()?.replace(/^#/, '');
+			if (tagText) tags.push(`#${tagText}`);
+		});
+
+		// 메타 데이터 포매팅
+		if (title) result += `# ${title}\n\n`;
+		if (author) result += `**작성자:** ${author}\n`;
+		if (date) result += `**작성일:** ${date}\n`;
+		if (views) result += `**조회수:** ${views}\n`;
+
+		if (tags.length > 0) {
+			result += `\n${tags.join(' ')}\n`;
+		}
+
+		if (result.trim()) {
+			result += `\n---\n\n`;
+		}
+
+		// 2. 본문 컨텐츠 추출 (SmartEditor 구조 순회)
+		const mainContainer = doc.querySelector('.se-main-container');
+		if (mainContainer) {
+			const components = mainContainer.querySelectorAll('.se-component');
+			components.forEach(comp => {
+				if (comp.classList.contains('se-text')) {
+					const paragraphs = comp.querySelectorAll('.se-text-paragraph');
+					paragraphs.forEach(p => {
+						const text = p.textContent?.trim();
+						if (!text || text === '\u200B') {
+							result += `\n`;
+						} else {
+							const isBlockquote = p.closest('.se-quote');
+							const headingEl = p.closest('h1, h2, h3, h4, h5, h6');
+							if (headingEl) {
+								const level = parseInt(headingEl.tagName.substring(1), 10);
+								const hashes = '#'.repeat(level);
+								result += `${hashes} ${text}\n\n`;
+							} else if (isBlockquote) {
+								result += `> ${text}\n\n`;
+							} else {
+								let paraText = '';
+								p.childNodes.forEach(child => {
+									if (child.nodeType === Node.TEXT_NODE) {
+										paraText += child.textContent;
+									} else if (child.nodeType === Node.ELEMENT_NODE) {
+										const spanEl = child as Element;
+										let textContent = spanEl.textContent || '';
+
+										if (spanEl.tagName === 'A') {
+											const href = spanEl.getAttribute('href');
+											if (href) textContent = `[${textContent}](${href})`;
+										}
+
+										const style = spanEl.getAttribute('style') || '';
+										const isBold = spanEl.tagName === 'B' || spanEl.tagName === 'STRONG' || style.includes('font-weight: 700') || style.includes('font-weight: bold');
+										const isStrike = spanEl.tagName === 'S' || spanEl.tagName === 'STRIKE' || style.includes('line-through');
+
+										if (isStrike) textContent = `~~${textContent}~~`;
+										else if (isBold) textContent = `**${textContent}**`;
+
+										paraText += textContent;
+									}
+								});
+								if (paraText.trim() || paraText === '\u200B') {
+									if (paraText === '\u200B') result += `\n`;
+									else result += `${paraText}\n\n`;
+								}
+							}
+						}
+					});
+				} else if (comp.classList.contains('se-image')) {
+					const img = comp.querySelector('img.se-image-resource');
+					if (img) {
+						const src = img.getAttribute('src') || img.getAttribute('data-src');
+						if (src) {
+							result += `![image](${src})\n\n`;
+						}
+					}
+				} else if (comp.classList.contains('se-oglink')) {
+					const href = comp.querySelector('a')?.getAttribute('href');
+					const linkTitle = comp.querySelector('.se-oglink-title')?.textContent?.trim() || 'Link';
+					if (href) {
+						result += `[${linkTitle}](${href})\n\n`;
+					}
+				} else if (comp.classList.contains('se-line')) {
+					result += `---\n\n`;
+				} else if (comp.classList.contains('se-sticker')) {
+					const img = comp.querySelector('img');
+					if (img) {
+						const src = img.getAttribute('src');
+						if (src) result += `![sticker](${src})\n\n`;
+					}
+				} else if (comp.classList.contains('se-video')) {
+					const img = comp.querySelector('img');
+					if (img) {
+						const src = img.getAttribute('src');
+						if (src) result += `![video_thumbnail](${src})\n\n`;
+					}
+				}
+			});
+		} else {
+			return ''; // 컨테이너 없으면 fallback 통과용 빈칸 반환
+		}
+
+		// 3. 댓글 영역 추출
+		const commentList = doc.querySelectorAll('.comment_list .CommentItem');
+		if (commentList.length > 0) {
+			result += `\n---\n\n### 💬 댓글\n\n`;
+			commentList.forEach(comment => {
+				const isDeleted = comment.querySelector('.comment_deleted');
+				if (isDeleted) return;
+
+				const author = comment.querySelector('.comment_nickname')?.textContent?.trim() || '알 수 없음';
+				const content = comment.querySelector('.text_comment')?.textContent?.trim() || '';
+				const date = comment.querySelector('.comment_info_date')?.textContent?.trim() || '';
+				const isReply = comment.classList.contains('CommentItem--reply');
+
+				const indent = isReply ? '> ' : '';
+
+				result += `${indent}> **${author}**:\n`;
+				if (content) result += `${indent}> ${content}\n`;
+				if (date) result += `${indent}> *${date}*\n`;
+				result += `${indent}>\n`;
+			});
+		}
+
+		return result.replace(/\n{3,}/g, '\n\n').trim();
+	} catch (error) {
+		console.error('Naver Cafe parsing error:', error);
+		return '';
+	}
 }
 
 // 현재 선택된 출력 규칙을 저장하는 변수
@@ -375,7 +536,7 @@ export function convertHtmlToMarkdown(html: string): string {
 	try {
 		// Use current rule directly
 		let effectiveRule = currentRule;
-		
+
 		// Gemini 전용 출력 규칙이 선택되었고 Gemini 규칙인 경우 HTML에서 직접 변환
 		if (effectiveRule === 'gemini' && currentOutputRule) {
 			switch (currentOutputRule) {
@@ -389,16 +550,22 @@ export function convertHtmlToMarkdown(html: string): string {
 					return convertGeminiToFormat4(html);
 			}
 		}
-		
+
+		// Naver Cafe 규칙인 경우 자체 HTML 트리 파싱 사용
+		if (effectiveRule === 'naver_cafe') {
+			const parsed = convertNaverCafeToFormat(html);
+			if (parsed) return parsed;
+		}
+
 		// HTML 전처리
 		let processedHtml = html;
-		
+
 		if (effectiveRule === 'gemini') {
 			// Gemini: chat-window-content 내용만 추출 (대화 내용만)
 			const chatWindowContentMatch = processedHtml.match(/<chat-window-content[^>]*>([\s\S]*?)<\/chat-window-content>/i);
 			if (chatWindowContentMatch) {
 				processedHtml = chatWindowContentMatch[1];
-				} else {
+			} else {
 				// chat-window-content가 없으면 infinite-scroller로 폴백
 				const infiniteScrollerMatch = processedHtml.match(/<infinite-scroller[^>]*>([\s\S]*?)<\/infinite-scroller>/i);
 				if (infiniteScrollerMatch) {
@@ -414,13 +581,13 @@ export function convertHtmlToMarkdown(html: string): string {
 				processedHtml = notionPageContentMatch[1];
 			}
 		}
-		
+
 		// 모든 규칙에서 script 태그 제거
 		processedHtml = processedHtml.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '');
 
 		// 1차 변환
 		let markdown = turndownService.turndown(processedHtml);
-		
+
 		// HTML 태그가 남아있으면 2차 변환 수행
 		if (hasHtmlTags(markdown)) {
 			// 개행을 <br />로 치환
@@ -428,10 +595,10 @@ export function convertHtmlToMarkdown(html: string): string {
 			// 2차 변환
 			markdown = turndownService.turndown(modifiedHtml);
 		}
-		
+
 		// 규칙별 후처리 적용
 		markdown = ruleConfigs[effectiveRule].postProcess(markdown);
-		
+
 		// 공백 정리
 		return cleanupMarkdown(markdown);
 	} catch (error) {
@@ -446,7 +613,7 @@ export function generateFilename(markdown: string): string {
 	const date = now.toISOString().slice(0, 10); // YYYY-MM-DD
 	const time = now.toTimeString().slice(0, 8).replace(/:/g, '-'); // HH-mm-ss
 	const heading = extractFirstHeading(markdown);
-	
+
 	return `${date}_${time}_${heading}.md`;
 }
 
@@ -465,14 +632,14 @@ export async function copyToClipboard(text: string): Promise<boolean> {
 export function downloadAsFile(content: string, filename: string): void {
 	const blob = new Blob([content], { type: 'text/markdown' });
 	const url = URL.createObjectURL(blob);
-	
+
 	const a = document.createElement('a');
 	a.href = url;
 	a.download = filename;
 	document.body.appendChild(a);
 	a.click();
 	document.body.removeChild(a);
-	
+
 	URL.revokeObjectURL(url);
 }
 

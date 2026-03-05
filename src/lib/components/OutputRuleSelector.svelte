@@ -1,6 +1,6 @@
 <script context="module" lang="ts">
 	// 입력 타입별로 사용 가능한 출력 규칙 정의
-	export type OutputRule = 'raw' | 'formatted' | 'clean' | 'structured' | 'minimal' | 'markdown_optimize' | 'gemini_format1' | 'gemini_format2' | 'gemini_format3' | 'gemini_format4' | 'claude_format1' | 'claude_format2' | 'claude_format3' | 'claude_format4';
+	export type OutputRule = 'raw' | 'formatted' | 'clean' | 'structured' | 'minimal' | 'markdown_optimize' | 'gemini_format1' | 'gemini_format2' | 'gemini_format3' | 'gemini_format4' | 'claude_format1' | 'claude_format2' | 'claude_format3' | 'claude_format4' | 'naver_cafe';
 </script>
 
 <script lang="ts">
@@ -124,6 +124,15 @@
 			supportedHandleRules: ['claude'],
 			condition: (currentRule: string, format: string) => {
 				return currentRule === 'claude' && format === 'HTML';
+			}
+		},
+		{
+			key: 'naver_cafe',
+			name: '☕ 네이버 카페 (기본)',
+			description: '네이버 카페 원본 구조를 유지하여 파싱',
+			supportedHandleRules: ['naver_cafe'],
+			condition: (currentRule: string, format: string) => {
+				return currentRule === 'naver_cafe' && format === 'HTML';
 			}
 		}
 	];

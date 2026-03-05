@@ -52,7 +52,7 @@ function processClean(markdown: string): string {
 // 구조화 - 헤딩과 목록을 명확히 구분하여 구조적으로 정리
 function processStructured(markdown: string): string {
 	let processed = markdown;
-	
+
 	// 헤딩 레벨별 구조화
 	processed = processed
 		// 각 헤딩 앞에 구분선 추가 (레벨 1, 2만)
@@ -69,14 +69,14 @@ function processStructured(markdown: string): string {
 			const indentStr = '  '.repeat(level);
 			return `${indentStr}${number} ${content}`;
 		});
-	
+
 	// 연속된 구분선 제거
 	processed = processed
 		.replace(/\n---\n\n---\n/g, '\n---\n')
 		.replace(/^\n---\n/, '')
 		.replace(/\n{3,}/g, '\n\n')
 		.trim();
-	
+
 	return processed;
 }
 
@@ -106,7 +106,7 @@ function processMinimal(markdown: string): string {
 // 마크다운 최적화 - 빈 링크 제거, 서식 정리 등 마크다운 품질 개선
 function processMarkdownOptimize(markdown: string): string {
 	let processed = markdown;
-	
+
 	// 빈 링크와 이미지 제거
 	processed = processed
 		// 빈 링크 제거 - 다양한 패턴 처리
@@ -123,7 +123,7 @@ function processMarkdownOptimize(markdown: string): string {
 		.replace(/([.!?]){2,}/g, '$1')
 		// 문장 끝 공백 제거
 		.replace(/\s+$/gm, '');
-		
+
 	// 마크다운 구조 정리 - 순서가 중요함
 	processed = processed
 		// 먼저 과도한 빈 줄 정리 (3개 이상 → 2개)
@@ -144,7 +144,7 @@ function processMarkdownOptimize(markdown: string): string {
 		.replace(/\n{3,}/g, '\n\n')
 		// 시작과 끝 공백 제거
 		.trim();
-		
+
 	return processed;
 }
 
@@ -152,12 +152,12 @@ function processMarkdownOptimize(markdown: string): string {
 function processGeminiFormat1(markdown: string): string {
 	const now = new Date();
 	const title = extractTitle(markdown) || `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-	
+
 	// HTML에서 사용자와 AI 응답 구분하여 파싱
 	const conversations = parseGeminiConversations(markdown);
-	
+
 	let result = `# ${title}\n\n`;
-	
+
 	conversations.forEach((conv, index) => {
 		if (conv.type === 'user') {
 			result += `---\n\n## 사용자\n\n${conv.content}\n\n`;
@@ -165,7 +165,7 @@ function processGeminiFormat1(markdown: string): string {
 			result += `---\n\n## AI\n\n${conv.content}\n\n`;
 		}
 	});
-	
+
 	return result.trim();
 }
 
@@ -173,16 +173,16 @@ function processGeminiFormat1(markdown: string): string {
 function processGeminiFormat2(markdown: string): string {
 	const now = new Date();
 	const title = extractTitle(markdown) || `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-	
+
 	const conversations = parseGeminiConversations(markdown);
-	
+
 	let result = `# ${title}\n\n`;
 	let questionCount = 1;
-	
+
 	for (let i = 0; i < conversations.length; i += 2) {
 		const question = conversations[i];
 		const answer = conversations[i + 1];
-		
+
 		if (question && question.type === 'user') {
 			result += `## 질문${questionCount}\n\n${question.content}\n\n`;
 			if (answer && answer.type === 'ai') {
@@ -191,21 +191,21 @@ function processGeminiFormat2(markdown: string): string {
 			questionCount++;
 		}
 	}
-	
+
 	return result.replace(/---\n\n$/, '').trim();
 }
 
 // Gemini 포맷3 - 인용형 구조
 function processGeminiFormat3(markdown: string): string {
 	const conversations = parseGeminiConversations(markdown);
-	
+
 	let result = '';
 	let questionCount = 1;
-	
+
 	for (let i = 0; i < conversations.length; i += 2) {
 		const question = conversations[i];
 		const answer = conversations[i + 1];
-		
+
 		if (question && question.type === 'user') {
 			result += `## 질문${questionCount}\n> ${question.content}\n\n`;
 			if (answer && answer.type === 'ai') {
@@ -214,16 +214,16 @@ function processGeminiFormat3(markdown: string): string {
 			questionCount++;
 		}
 	}
-	
+
 	return result.replace(/---\n\n$/, '').trim();
 }
 
 // Gemini 포맷4 - 코드형 구조
 function processGeminiFormat4(markdown: string): string {
 	const conversations = parseGeminiConversations(markdown);
-	
+
 	let result = '';
-	
+
 	conversations.forEach((conv, index) => {
 		if (conv.type === 'user') {
 			result += `**사용자**\n\`\`\`\n${conv.content}\n\`\`\`\n\n`;
@@ -231,7 +231,7 @@ function processGeminiFormat4(markdown: string): string {
 			result += `**Gemini**\n\`\`\`\n${conv.content}\n\`\`\`\n\n`;
 		}
 	});
-	
+
 	return result.trim();
 }
 
@@ -239,11 +239,11 @@ function processGeminiFormat4(markdown: string): string {
 function processClaudeFormat1(markdown: string): string {
 	const now = new Date();
 	const title = extractTitle(markdown) || `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-	
+
 	const conversations = parseClaudeConversations(markdown);
-	
+
 	let result = `# ${title}\n\n`;
-	
+
 	conversations.forEach((conv, index) => {
 		if (conv.type === 'user') {
 			result += `---\n\n## 사용자\n\n${conv.content}\n\n`;
@@ -251,7 +251,7 @@ function processClaudeFormat1(markdown: string): string {
 			result += `---\n\n## Claude\n\n${conv.content}\n\n`;
 		}
 	});
-	
+
 	return result.trim();
 }
 
@@ -259,16 +259,16 @@ function processClaudeFormat1(markdown: string): string {
 function processClaudeFormat2(markdown: string): string {
 	const now = new Date();
 	const title = extractTitle(markdown) || `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-	
+
 	const conversations = parseClaudeConversations(markdown);
-	
+
 	let result = `# ${title}\n\n`;
 	let questionCount = 1;
-	
+
 	for (let i = 0; i < conversations.length; i += 2) {
 		const question = conversations[i];
 		const answer = conversations[i + 1];
-		
+
 		if (question && question.type === 'user') {
 			result += `## 질문${questionCount}\n\n${question.content}\n\n`;
 			if (answer && answer.type === 'ai') {
@@ -277,21 +277,21 @@ function processClaudeFormat2(markdown: string): string {
 			questionCount++;
 		}
 	}
-	
+
 	return result.replace(/---\n\n$/, '').trim();
 }
 
 // Claude 포맷3 - 인용형 구조
 function processClaudeFormat3(markdown: string): string {
 	const conversations = parseClaudeConversations(markdown);
-	
+
 	let result = '';
 	let questionCount = 1;
-	
+
 	for (let i = 0; i < conversations.length; i += 2) {
 		const question = conversations[i];
 		const answer = conversations[i + 1];
-		
+
 		if (question && question.type === 'user') {
 			result += `## 질문${questionCount}\n> ${question.content}\n\n`;
 			if (answer && answer.type === 'ai') {
@@ -300,16 +300,16 @@ function processClaudeFormat3(markdown: string): string {
 			questionCount++;
 		}
 	}
-	
+
 	return result.replace(/---\n\n$/, '').trim();
 }
 
 // Claude 포맷4 - 코드형 구조
 function processClaudeFormat4(markdown: string): string {
 	const conversations = parseClaudeConversations(markdown);
-	
+
 	let result = '';
-	
+
 	conversations.forEach((conv, index) => {
 		if (conv.type === 'user') {
 			result += `**사용자**\n\`\`\`\n${conv.content}\n\`\`\`\n\n`;
@@ -317,7 +317,7 @@ function processClaudeFormat4(markdown: string): string {
 			result += `**Claude**\n\`\`\`\n${conv.content}\n\`\`\`\n\n`;
 		}
 	});
-	
+
 	return result.trim();
 }
 
@@ -325,18 +325,18 @@ function processClaudeFormat4(markdown: string): string {
 function extractTitle(content: string): string | null {
 	console.log('🔍 extractTitle() called with content length:', content.length);
 	console.log('🔍 Content preview:', content.substring(0, 500));
-	
+
 	// HTML에서 제목 추출 시도
 	const hasH1 = content.includes('<h1');
 	const hasH2 = content.includes('<h2');
 	const hasTitle = content.includes('<title');
 	console.log('🔍 HTML heading check:', { hasH1, hasH2, hasTitle });
-	
+
 	if (hasH1 || hasH2 || hasTitle) {
 		try {
 			const parser = new DOMParser();
 			const doc = parser.parseFromString(content, 'text/html');
-			
+
 			// 1. <title> 태그 먼저 확인 (단, 기본값이 아닌 경우만)
 			const titleTag = doc.querySelector('title');
 			console.log('🔍 Found title tag:', titleTag ? titleTag.outerHTML : 'null');
@@ -345,7 +345,7 @@ function extractTitle(content: string): string | null {
 				console.log('✅ Extracted title tag:', title);
 				return title;
 			}
-			
+
 			// 2. <h1> 제목 확인 (가장 우선순위가 높음)
 			const h1 = doc.querySelector('h1');
 			console.log('🔍 Found h1 element:', h1 ? h1.outerHTML : 'null');
@@ -354,7 +354,7 @@ function extractTitle(content: string): string | null {
 				console.log('✅ Extracted h1 title:', title);
 				return title;
 			}
-			
+
 			// 3. <h2> 제목 확인
 			const h2 = doc.querySelector('h2');
 			console.log('🔍 Found h2 element:', h2 ? h2.outerHTML : 'null');
@@ -363,13 +363,13 @@ function extractTitle(content: string): string | null {
 				console.log('✅ Extracted h2 title:', title);
 				return title;
 			}
-			
+
 			console.log('❌ No valid HTML headings found');
 		} catch (error) {
 			console.log('❌ HTML title extraction failed:', error);
 		}
 	}
-	
+
 	// 마크다운에서 제목 추출 시도
 	const headingMatch = content.match(/^#+\s+(.+)$/m);
 	console.log('🔍 Markdown heading match:', headingMatch);
@@ -378,62 +378,62 @@ function extractTitle(content: string): string | null {
 		console.log('✅ Extracted markdown title:', title);
 		return title;
 	}
-	
+
 	console.log('❌ No title found, using default');
 	return null;
 }
 
 // Gemini 대화 파싱 함수 - HTML에서 CSS selector를 사용하여 파싱
-function parseGeminiConversations(htmlContent: string): Array<{type: 'user' | 'ai', content: string}> {
-	const conversations: Array<{type: 'user' | 'ai', content: string}> = [];
-	
+function parseGeminiConversations(htmlContent: string): Array<{ type: 'user' | 'ai', content: string }> {
+	const conversations: Array<{ type: 'user' | 'ai', content: string }> = [];
+
 	try {
 		// HTML을 파싱하기 위해 DOMParser 사용
 		const parser = new DOMParser();
 		const doc = parser.parseFromString(htmlContent, 'text/html');
-		
+
 		// 3개 셀렉터 모두 확인 - 하나라도 없으면 폴백 사용
 		const userQueryContainers = doc.querySelectorAll('.user-query-container');
 		const userQueryBubbleContainers = doc.querySelectorAll('.user-query-bubble-container');
 		const responseContainers = doc.querySelectorAll('.response-container');
-		
+
 		// 3개 셀렉터가 모두 존재하는지 확인
-		const hasAllSelectors = userQueryContainers.length > 0 && 
-								userQueryBubbleContainers.length > 0 && 
-								responseContainers.length > 0;
-		
+		const hasAllSelectors = userQueryContainers.length > 0 &&
+			userQueryBubbleContainers.length > 0 &&
+			responseContainers.length > 0;
+
 		if (!hasAllSelectors) {
 			console.log('Gemini parsing: Missing required selectors, falling back to simple parsing');
 			return parseConversationsFallback(htmlContent);
 		}
-		
+
 		// 사용자 질문 추출 (두 셀렉터 모두 사용)
 		const userQueries = doc.querySelectorAll('.user-query-container, .user-query-bubble-container');
 		const aiResponses = doc.querySelectorAll('.response-container');
-		
+
 		// 사용자 질문과 AI 응답을 순서대로 매칭
 		const maxLength = Math.max(userQueries.length, aiResponses.length);
-		
+
 		for (let i = 0; i < maxLength; i++) {
 			if (userQueries[i]) {
 				const userContent = userQueries[i].textContent?.trim() || '';
 				if (userContent) {
-					conversations.push({type: 'user', content: userContent});
+					conversations.push({ type: 'user', content: userContent });
 				}
 			}
-			
+
 			if (aiResponses[i]) {
 				const aiContent = aiResponses[i].textContent?.trim() || '';
 				if (aiContent) {
-					conversations.push({type: 'ai', content: aiContent});
+					conversations.push({ type: 'ai', content: aiContent });
 				}
 			}
 		}
-		
+
 		// 대안 방법: 더 넓은 범위의 셀렉터로 시도
 		if (conversations.length === 0) {
 			console.log('Gemini parsing: Trying alternative parsing method');
-			
+
 			// 더 일반적인 셀렉터들로 시도
 			const alternativeSelectors = [
 				'[data-message-id]',
@@ -443,7 +443,7 @@ function parseGeminiConversations(htmlContent: string): Array<{type: 'user' | 'a
 				'article',
 				'section'
 			];
-			
+
 			for (const selector of alternativeSelectors) {
 				const elements = doc.querySelectorAll(selector);
 				if (elements.length > 0) {
@@ -451,51 +451,51 @@ function parseGeminiConversations(htmlContent: string): Array<{type: 'user' | 'a
 						const content = element.textContent?.trim() || '';
 						if (content && content.length > 20) { // 의미있는 텍스트만
 							const type = index % 2 === 0 ? 'user' : 'ai';
-							conversations.push({type, content});
+							conversations.push({ type, content });
 						}
 					});
-					
+
 					if (conversations.length > 0) break;
 				}
 			}
 		}
-		
+
 		// 파싱 결과가 없으면 폴백 사용
 		if (conversations.length === 0) {
 			console.log('Gemini parsing: No conversations found, falling back to simple parsing');
 			return parseConversationsFallback(htmlContent);
 		}
-		
+
 	} catch (error) {
 		console.error('Gemini conversation parsing error:', error);
 		return parseConversationsFallback(htmlContent);
 	}
-	
+
 	return conversations;
 }
 
 // Claude 대화 파싱 함수 - HTML에서 CSS selector를 사용하여 파싱
-function parseClaudeConversations(htmlContent: string): Array<{type: 'user' | 'ai', content: string}> {
-	const conversations: Array<{type: 'user' | 'ai', content: string}> = [];
-	
+function parseClaudeConversations(htmlContent: string): Array<{ type: 'user' | 'ai', content: string }> {
+	const conversations: Array<{ type: 'user' | 'ai', content: string }> = [];
+
 	try {
 		// HTML을 파싱하기 위해 DOMParser 사용
 		const parser = new DOMParser();
 		const doc = parser.parseFromString(htmlContent, 'text/html');
-		
+
 		// 1. 사용자 메시지 찾기: data-testid="user-message"와 .font-user-message 클래스를 모두 가진 요소
 		// 각 사용자 메시지는 하나의 컨테이너에 여러 <p> 태그를 가질 수 있음
 		const userMessageElements = doc.querySelectorAll('[data-testid="user-message"].font-user-message');
 		console.log('Claude parsing: Found', userMessageElements.length, 'user message elements');
-		
-		const userMessages: Array<{content: string, element: Element}> = [];
+
+		const userMessages: Array<{ content: string, element: Element }> = [];
 		userMessageElements.forEach(userEl => {
 			// 각 사용자 메시지 컨테이너 내의 모든 텍스트를 하나로 결합
 			const paragraphs = userEl.querySelectorAll('p');
 			const links = userEl.querySelectorAll('a');
-			
+
 			const textParts: string[] = [];
-			
+
 			// p 태그들의 내용을 순서대로 수집
 			paragraphs.forEach(p => {
 				const text = p.textContent?.trim();
@@ -503,7 +503,7 @@ function parseClaudeConversations(htmlContent: string): Array<{type: 'user' | 'a
 					textParts.push(text);
 				}
 			});
-			
+
 			// 링크들도 별도로 처리
 			links.forEach(a => {
 				const text = a.textContent?.trim();
@@ -517,7 +517,7 @@ function parseClaudeConversations(htmlContent: string): Array<{type: 'user' | 'a
 					}
 				}
 			});
-			
+
 			// p 태그가 없는 경우 전체 텍스트 사용
 			if (textParts.length === 0) {
 				const fallbackText = userEl.textContent?.trim();
@@ -525,7 +525,7 @@ function parseClaudeConversations(htmlContent: string): Array<{type: 'user' | 'a
 					textParts.push(fallbackText);
 				}
 			}
-			
+
 			const combinedContent = textParts.join('\n\n');
 			if (combinedContent && combinedContent.length > 0) {
 				userMessages.push({
@@ -535,22 +535,22 @@ function parseClaudeConversations(htmlContent: string): Array<{type: 'user' | 'a
 				console.log('Claude parsing: Found user message:', combinedContent.substring(0, 100));
 			}
 		});
-		
+
 		// 2. AI 메시지 찾기: data-is-streaming 속성을 가진 요소들
 		const aiMessageElements = doc.querySelectorAll('[data-is-streaming]');
 		console.log('Claude parsing: Found', aiMessageElements.length, 'AI message elements');
-		
-		const aiMessages: Array<{content: string, element: Element}> = [];
+
+		const aiMessages: Array<{ content: string, element: Element }> = [];
 		aiMessageElements.forEach(aiEl => {
 			// AI 메시지 내용 추출 - 마크다운 컨테이너 우선 검색
 			let content = '';
 			const markdownContainer = aiEl.querySelector('.standard-markdown, .progressive-markdown');
-			
+
 			if (markdownContainer) {
 				// 마크다운 컨테이너에서 구조화된 내용 추출
 				const elements = markdownContainer.querySelectorAll('p, h1, h2, h3, h4, h5, h6, ul, ol, pre, blockquote');
 				const textParts: string[] = [];
-				
+
 				elements.forEach(el => {
 					if (el.tagName === 'UL' || el.tagName === 'OL') {
 						// 리스트 항목들을 처리
@@ -565,15 +565,15 @@ function parseClaudeConversations(htmlContent: string): Array<{type: 'user' | 'a
 						}
 					}
 				});
-				
+
 				content = textParts.join('\n\n');
 			}
-			
+
 			// 마크다운 컨테이너가 없거나 내용이 없는 경우 전체 텍스트 사용
 			if (!content || content.length === 0) {
 				content = aiEl.textContent?.trim() || '';
 			}
-			
+
 			if (content && content.length > 0) {
 				aiMessages.push({
 					content: content,
@@ -582,12 +582,12 @@ function parseClaudeConversations(htmlContent: string): Array<{type: 'user' | 'a
 				console.log('Claude parsing: Found AI message:', content.substring(0, 100));
 			}
 		});
-		
+
 		// 3. 메시지들을 DOM 순서대로 정렬
 		// HTML에서 나타나는 순서대로 사용자와 AI 메시지를 배치
-		const allMessageElements = [...userMessages.map(msg => ({...msg, type: 'user' as const})), 
-									  ...aiMessages.map(msg => ({...msg, type: 'ai' as const}))];
-		
+		const allMessageElements = [...userMessages.map(msg => ({ ...msg, type: 'user' as const })),
+		...aiMessages.map(msg => ({ ...msg, type: 'ai' as const }))];
+
 		// DOM 순서로 정렬 (element의 위치 기준)
 		allMessageElements.sort((a, b) => {
 			const position = a.element.compareDocumentPosition(b.element);
@@ -599,7 +599,7 @@ function parseClaudeConversations(htmlContent: string): Array<{type: 'user' | 'a
 			}
 			return 0; // 같은 위치
 		});
-		
+
 		// 최종 결과에 추가
 		allMessageElements.forEach(msg => {
 			conversations.push({
@@ -607,59 +607,59 @@ function parseClaudeConversations(htmlContent: string): Array<{type: 'user' | 'a
 				content: msg.content
 			});
 		});
-		
+
 		console.log('Claude parsing: Total conversations found:', conversations.length);
 		console.log('Claude parsing: Message types:', conversations.map(c => c.type).join(', '));
-		
+
 		// 파싱 결과가 없으면 폴백 사용
 		if (conversations.length === 0) {
 			console.log('Claude parsing: No conversations found, falling back to simple parsing');
 			return parseConversationsFallback(htmlContent);
 		}
-		
+
 	} catch (error) {
 		console.error('Claude conversation parsing error:', error);
 		return parseConversationsFallback(htmlContent);
 	}
-	
+
 	return conversations;
 }
 
 // 폴백 파싱 함수 - selector가 작동하지 않을 때 사용
-function parseConversationsFallback(content: string): Array<{type: 'user' | 'ai', content: string}> {
-	const conversations: Array<{type: 'user' | 'ai', content: string}> = [];
-	
+function parseConversationsFallback(content: string): Array<{ type: 'user' | 'ai', content: string }> {
+	const conversations: Array<{ type: 'user' | 'ai', content: string }> = [];
+
 	// HTML에서 텍스트 추출
 	try {
 		const parser = new DOMParser();
 		const doc = parser.parseFromString(content, 'text/html');
 		const fullText = doc.body.textContent || content;
-		
+
 		// 텍스트를 문단 단위로 분할 (빈 줄로 구분)
 		const paragraphs = fullText.split(/\n\s*\n/).filter(p => p.trim().length > 0);
-		
+
 		// 첫 번째 문단이 질문이라고 가정하고, 이후 번갈아 가며 처리
 		paragraphs.forEach((paragraph, index) => {
 			const cleanParagraph = paragraph.replace(/\s+/g, ' ').trim();
 			if (cleanParagraph.length > 10) { // 의미있는 텍스트만
 				const type = index % 2 === 0 ? 'user' : 'ai';
-				conversations.push({type, content: cleanParagraph});
+				conversations.push({ type, content: cleanParagraph });
 			}
 		});
-		
+
 		// 결과가 없으면 전체를 하나의 사용자 메시지로 처리
 		if (conversations.length === 0 && fullText.trim().length > 0) {
-			conversations.push({type: 'user', content: fullText.trim()});
+			conversations.push({ type: 'user', content: fullText.trim() });
 		}
-		
+
 	} catch (error) {
 		console.error('Fallback parsing error:', error);
 		// 최후의 방법: 전체를 하나의 사용자 메시지로 처리
 		if (content.trim().length > 0) {
-			conversations.push({type: 'user', content: content.trim()});
+			conversations.push({ type: 'user', content: content.trim() });
 		}
 	}
-	
+
 	return conversations;
 }
 
@@ -686,9 +686,9 @@ function endsWithHtml(content: string): boolean {
  * 선택된 출력 규칙에 따라 마크다운을 처리
  */
 export function applyOutputRule(
-	markdown: string, 
-	rule: OutputRule, 
-	inputFormat?: string, 
+	markdown: string,
+	rule: OutputRule,
+	inputFormat?: string,
 	inputType?: string
 ): string {
 	if (!markdown.trim()) {
@@ -716,7 +716,8 @@ export function applyOutputRule(
 			case 'gemini_format2':
 			case 'gemini_format3':
 			case 'gemini_format4':
-				// Gemini 전용 포맷은 converter.ts에서 HTML 단계에서 직접 처리됨
+			case 'naver_cafe':
+				// 자체 구조 파싱은 converter.ts에서 HTML 단계에서 직접 처리됨
 				return processRaw(markdown);
 			case 'claude_format1':
 				return processClaudeFormat1(markdown);
@@ -753,8 +754,9 @@ export function getOutputRuleDescription(rule: OutputRule): string {
 		claude_format1: '## 사용자/Claude 헤딩으로 대화 구조화',
 		claude_format2: '## 질문/답변 형태로 구조화',
 		claude_format3: '질문과 답변을 인용구로 구조화',
-		claude_format4: '사용자/Claude를 코드 블록으로 구조화'
+		claude_format4: '사용자/Claude를 코드 블록으로 구조화',
+		naver_cafe: '네이버 카페 원본 구조를 유지하여 파싱'
 	};
-	
+
 	return descriptions[rule] || descriptions.raw;
 }
