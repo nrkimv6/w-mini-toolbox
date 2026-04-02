@@ -14,6 +14,17 @@ description: "구현 완료 후처리 (plan 체크, archive, TODO→DONE, commit
 
 ## 실행 단계
 
+### 0단계: 고아 pytest 선제 정리
+
+done 실행 전 이전 세션 잔여 pytest가 메모리를 점유하고 있을 수 있다.
+
+Bash로 실행:
+```
+powershell.exe -ExecutionPolicy Bypass -File "D:\work\project\tools\monitor-page\scripts\kill-orphan-procs.ps1"
+```
+
+실패하거나 스크립트가 없으면 무시하고 1단계로 진행.
+
 ### 1단계: 관련 plan 문서 찾기
 
 **프로젝트 경로 해석:**
@@ -23,15 +34,14 @@ $config = Get-Content $configPath | ConvertFrom-Json
 # 각 프로젝트의 절대경로: $config.projects[].path
 ```
 
-**wtools 감지**: 현재 디렉토리에 `common/` 폴더 존재 여부로 판단
-- **있으면**: wtools 내부 → `common/docs/plan/` 및 `{proj.path}/docs/plan/` 확인
-- **없으면**: 외부 프로젝트 → 현재 프로젝트의 `docs/plan/`만 확인
+**wtools 감지**: 현재 디렉토리에 `common/tools/` 폴더 존재 여부로 판단
+- **있으면**: wtools 내부 → CLAUDE.md 문서 위치 규칙의 plan 경로 확인
+- **없으면**: 외부 프로젝트 → CLAUDE.md 문서 위치 규칙의 plan 경로 확인 (기본: `docs/plan/`)
 
 아래 **모든 경로**에서 현재 작업과 관련된 계획 문서를 찾습니다:
 
 ```
-common/docs/plan/*.md (wtools 내부일 때만)
-{proj.path}/docs/plan/*.md
+CLAUDE.md 문서 위치 규칙의 plan 경로/*.md
 ```
 
 ### 2단계: plan 문서 완료 체크 & 진행률 업데이트
@@ -62,6 +72,45 @@ common/docs/plan/*.md (wtools 내부일 때만)
 - 단, plan 작성 시에는 예시 체크박스를 `☐`(U+2610)로 표기 권장
 - 참고: `/plan` 스킬의 "## 코드블럭 내 체크박스 규칙"
 
+### 1.5단계: 사전 검증 (구현완료 설정 전 게이트)
+
+> **🔴 이 검증은 상태를 "구현완료"로 변경하기 전에 반드시 통과해야 한다.**
+> 검증 실패 시 상태 변경 없이 즉시 중단한다.
+
+**2.5 branch/worktree 검증 (수동 `/done` 전용):**
+
+> 자동 파이프라인(plan-runner Stage 6)에서는 MergeWorkflow가 이미 worktree를 삭제했으므로 면제.
+
+1. plan 헤더에서 `> branch:` 또는 `> worktree:` 필드 유무 확인
+2. **필드가 있으면** → 중단:
+   ```
+   ⚠️ plan에 활성 branch/worktree가 있습니다: {branch}
+   먼저 /merge-test를 실행하여 머지 + 통합테스트를 완료하세요.
+   done 처리 중단.
+   ```
+3. **필드가 없으면** → 계속 진행
+
+**2.6 fix: plan 재발 경로 검증:**
+
+plan/todo 파일명에 `_fix-`/`_fix_`가 포함되거나 제목이 `fix:`로 시작하면:
+
+1. plan/todo 내용에서 "재발 경로 분석" 또는 "Phase R" 문자열 검색
+2. **없으면** → 경고 출력 + 중단:
+   ```
+   ⚠️ fix: plan에 재발 경로 분석(Phase R)이 없습니다.
+   /implement에서 Phase R을 먼저 실행하세요.
+   done 처리 중단.
+   ```
+3. **있으면** → Phase R 섹션(### Phase R ~ 다음 ### 사이) 내에서만 "미방어" 문자열 검색 (코드블럭·템플릿 텍스트 제외)
+4. Phase R 섹션 내 "미방어" 경로가 남아있으면 → 경고 + 중단:
+   ```
+   ⚠️ 재발 경로 분석에 미방어 경로가 남아있습니다.
+   미방어 경로를 모두 수정한 후 다시 /done 하세요.
+   ```
+5. 전부 "방어됨"이면 → 정상 통과
+
+> 1.5단계를 통과한 경우에만 아래 2단계(구현완료 상태 설정)로 진행한다.
+
 **모든 항목 완료 시 상태 변경:**
 ```markdown
 > 상태: 구현완료
@@ -74,16 +123,34 @@ common/docs/plan/*.md (wtools 내부일 때만)
 
 plan 문서의 모든 체크박스가 `[x]`이면:
 
-1. **프로젝트 특정 plan**: `common/docs/plan/{파일}.md` (wtools만) → `{proj.path}/docs/archive/{파일}.md`
-2. **공통/복수 프로젝트 plan**: `common/docs/plan/{파일}.md` (wtools만) → `common/docs/archive/{파일}.md`
-3. **외부 프로젝트 plan**: `{proj.path}/docs/plan/{파일}.md` → `{proj.path}/docs/archive/{파일}.md`
+**🔴 TODO 파일 동반 아카이브 필수**
+
+- `/done` 실행 시 Claude가 선택하는 **primary 파일은 TODO 파일**이다.
+  (`_todo.md` 단일 파일 또는 `_todo-N.md` 복수 파일)
+- **복수 TODO (`_todo-N.md`)**: 같은 stem의 `{stem}_todo-*.md`를 glob 탐색하여 **모든 `_todo-N.md`가 완료**(`[ ]` 잔존 없음)일 때만 전체 archive 진행. 대표 문서(`{stem}.md`)도 함께 archive.
+  대표 문서의 진행률 = 모든 `_todo-N.md`의 `[x]` 합계 / 전체 체크박스 합계.
+- **단일 TODO (`_todo.md`)**: 기존 동작 유지 — plan 원본도 함께 archive. (하위 호환)
+- **단일 파일 plan** (TODO 분리 없음): plan 파일 하나만 아카이브.
+
+**아카이브 이동 대상:**
+
+| 형태 | primary | 동반 파일 |
+|---|---|---|
+| 분리 | `_todo-1.md`, `_todo-2.md`, ... | 대표 문서 `{stem}.md` |
+| 단일 TODO | `_todo.md` | plan 원본 `{stem}.md` (archive에 있으면 스킵) |
+| 단일 파일 | plan `.md` | 없음 |
+
+1. **plan**: CLAUDE.md 문서 위치 규칙의 plan 경로 → CLAUDE.md 문서 위치 규칙의 archive 경로
 4. **아카이브 이동 시 반드시 `git mv` 사용** (git 히스토리 보존):
 
 ```powershell
-# ✅ 올바른 방법 — git mv로 이동 (히스토리 추적 가능)
-git mv -f "{plan경로}" "{archive경로}"
+# ✅ 올바른 방법 — _todo.md와 원본 plan 둘 다 이동
+git mv -f "docs/plan/YYYY-MM-DD_{주제}_todo.md" "docs/archive/YYYY-MM-DD_{주제}_todo.md"
+# 원본 plan이 docs/plan/ 에 남아있으면 함께 이동 (이미 archive에 있으면 스킵)
+# git mv -f "docs/plan/YYYY-MM-DD_{주제}.md" "docs/archive/YYYY-MM-DD_{주제}.md"
+
 # 이동 후 archive 헤더 추가 (Set-Content 또는 Edit 도구)
-git add "{archive경로}"
+git add "docs/archive/YYYY-MM-DD_{주제}_todo.md"
 
 # ❌ FORBIDDEN: Move-Item / Remove-Item — 히스토리 유실
 # Move-Item -Path "{plan경로}" -Destination "{archive경로}"
@@ -100,6 +167,12 @@ git add "{archive경로}"
 > 진행률: N/N (100%)
 > 요약: {원본 plan에서 복사}
 ```
+
+### 3.5단계: 금지어 체크 (fix: plan만)
+
+fix: plan인 경우, 안내 텍스트와 커밋 메시지에 아래 표현이 포함되면 경고 후 대체:
+- ❌ "근본 수정", "근본 해결", "완전 해결", "최종 수정", "영구 수정"
+- ✅ 대체: "N개 경로 방어 완료", "재발 경로 M개 중 M개 방어됨"
 
 ### 4단계: TODO → DONE 이동 (수동 검증 항목 분리)
 
@@ -195,7 +268,7 @@ docs/DONE.md 항목이 10개를 초과하면:
 
 ### 6단계: wtools/TODO.md 동기화 (wtools만 해당)
 
-**wtools 감지 조건**: 현재 디렉토리에 `common/` 폴더가 있는지 확인
+**wtools 감지 조건**: 현재 디렉토리에 `common/tools/` 폴더가 있는지 확인
 - **있으면**: wtools 내부 → 아래 동기화 실행
 - **없으면**: 외부 프로젝트 → 이 단계 **스킵**
 
@@ -210,15 +283,15 @@ wtools/TODO.md를 열어 해당 프로젝트 섹션을 갱신합니다:
 
 **전제 조건 확인 (먼저 실행):**
 
-- plan 헤더에 `> branch:` 필드가 있으면 → **⚠️ 워크트리 머지가 아직 완료되지 않았습니다.**
-  먼저 `/merge-test`를 실행하여 머지 + 통합테스트를 완료하세요. 이후 단계 중단.
+> branch/worktree 검증은 1.5단계에서 이미 수행했으므로 여기서는 생략한다.
+
 - plan 상태가 `구현완료`가 아니면 → 경고 출력:
   - 상태가 `구현중`이고 `> branch:` 없으면 → 계속 진행 (worktree 미사용 직접 구현)
   - 그 외 상태 → "현재 상태: {상태}. `/merge-test` 또는 `/implement` 먼저 완료하세요." + 중단
 
 커밋 전 실제로 정리가 되었는지 확인합니다:
 
-1. **plan 문서 확인**: `common/docs/plan/`, `{project}/docs/plan/`에 완료된 작업의 plan이 남아있지 않은지 확인
+1. **plan 문서 확인**: CLAUDE.md 문서 위치 규칙의 plan 경로에 완료된 작업의 plan이 남아있지 않은지 확인
 2. **프로젝트 TODO 확인**: `{project}/TODO.md`에서 완료 항목이 제거되었는지 확인
 3. **wtools/TODO.md 확인**: 해당 프로젝트 섹션 진행률이 갱신되었는지 확인
 4. **DONE.md 확인**: 완료 항목이 추가되었는지 확인
@@ -306,21 +379,25 @@ git commit -m "..."
 실행 후 확인사항:
 
 - [ ] **커밋 완료** 🔴
-- [ ] plan 문서 항목 체크됨 (common/docs/plan + {project}/docs/plan 모두)
+- [ ] plan 문서 항목 체크됨 (CLAUDE.md 문서 위치 규칙의 plan 경로)
 - [ ] 완료된 plan은 archive로 이동됨
 - [ ] {project}/TODO.md에서 항목 제거됨
 - [ ] {project}/docs/DONE.md에 항목 추가됨
 - [ ] **wtools/TODO.md 동기화됨**
 - [ ] **7단계 검증 통과** (누락 없이 모두 정리됨)
 
+**완료 후 안내:** 모든 단계가 끝나면 아래 안내를 출력한다:
+```
+회고가 필요하면 /reflect를 실행하세요.
+(우려점, 유사 문제, 리팩토링, 미발견 오류를 분석하고 필요시 계획서를 생성합니다)
+```
+
 ## 파일 경로 규칙
 
 | 문서 | 경로 |
 |------|------|
-| 계획 문서 (공통) | `common/docs/plan/*.md` |
-| 계획 문서 (프로젝트) | `{project}/docs/plan/*.md` |
-| 아카이브 (프로젝트별) | `{project}/docs/archive/*.md` |
-| 아카이브 (공통) | `common/docs/archive/*.md` |
+| 계획 문서 | CLAUDE.md 문서 위치 규칙의 plan 경로 |
+| 아카이브 | CLAUDE.md 문서 위치 규칙의 archive 경로 |
 | 프로젝트 TODO | `{project}/TODO.md` |
 | 프로젝트 DONE | `{project}/docs/DONE.md` |
 

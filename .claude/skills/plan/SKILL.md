@@ -23,19 +23,21 @@ $config = Get-Content $configPath | ConvertFrom-Json
 # 각 프로젝트의 절대경로: $config.projects[].path
 ```
 
-**wtools 감지**: 현재 디렉토리에 `common/` 폴더 존재 여부로 판단
-- **있으면**: wtools 내부 → `common/docs/plan/`에 공통 계획 저장 + wtools/TODO.md 동기화 **실행**
-- **없으면**: 외부 프로젝트 → `{proj.path}/docs/plan/`에 저장 + wtools/TODO.md 동기화 **스킵**
+**경로 규칙**: CLAUDE.md `문서 위치 규칙` 테이블을 참조하라. 테이블이 없으면 기본 경로(`docs/plan/`, `docs/archive/`)를 사용. 상세: [`_path-rules.md`](./_path-rules.md)
+
+**wtools 감지**: 현재 디렉토리에 `common/tools/` 폴더 존재 여부로 판단
+- **있으면**: wtools 내부 → CLAUDE.md의 plan 경로에 공통 계획 저장 + wtools/TODO.md 동기화 **실행**
+- **없으면**: 외부 프로젝트 → CLAUDE.md의 plan 경로에 저장 + wtools/TODO.md 동기화 **스킵**
 
 **TODO는 반드시 프로젝트 단위로 생성한다:**
 
 | 대상 | plan 위치 | TODO 위치 |
 |------|----------|----------|
-| 단일 프로젝트 | `{proj.path}/docs/plan/` | `{proj.path}/docs/plan/` |
-| 복수 프로젝트 | `common/docs/plan/` (wtools만) | **각 프로젝트별** `{proj.path}/docs/plan/` |
-| 공통 (스킬, 설정 등) | `common/docs/plan/` (wtools만) | `common/docs/plan/` |
+| 단일 프로젝트 | CLAUDE.md의 plan 경로 | CLAUDE.md의 plan 경로 |
+| 복수 프로젝트 | CLAUDE.md의 plan 경로 | **각 프로젝트별** CLAUDE.md의 plan 경로 |
+| 공통 (스킬, 설정 등) | CLAUDE.md의 plan 경로 | CLAUDE.md의 plan 경로 |
 
-파일명: `YYYY-MM-DD_{주제}.md`, 별도 TODO(모드B): `_todo.md` 접미사, 아카이브(모드B): `docs/archive/`로 이동
+파일명: `YYYY-MM-DD_{주제}.md`. 대형 계획 분리 시: `_todo-N.md` 접미사 (N=1,2,...). 기존 `_todo.md` 단일 파일도 하위 호환으로 인식
 
 ## 실행 단계
 
@@ -53,20 +55,24 @@ $config = Get-Content $configPath | ConvertFrom-Json
 - 기존 패턴, 컨벤션 파악
 - 의존성 및 영향 범위 확인
 
-### 3단계: 계획 문서 작성 + 모드 선택
+### 3단계: 계획 문서 작성
 
-계획 문서를 작성한 뒤, **분량에 따라 모드를 선택**하고 해당 헬퍼 파일을 읽어 실행한다.
+계획 문서를 작성한 뒤, 같은 폴더의 **`_template.md`를 Read 도구로 읽고** 적절한 형태(단일/분리)로 출력한다.
 
-| 모드 | 판단 기준 | 헬퍼 파일 |
-|------|----------|----------|
-| **모드 A** | 한눈에 읽히는 분량 (Phase 1-2개, 작업 5개 이하) | `_mode-a.md` |
-| **모드 B** | 스크롤이 길어지는 분량 (Phase 3개+, 작업 6개+) | `_mode-b.md` |
+| 형태 | 판단 기준 | 결과물 |
+|------|----------|--------|
+| **단일** | 작업 30개 이하 | `plan.md` 1개 (분석 + TODO 합본) |
+| **분리** | 작업 31개+ AND 독립 Phase 묶음 2개+ | `plan.md` (대표 문서) + `_todo-N.md` 복수 |
 
-**실행:** 모드 판단 후, 같은 폴더의 해당 헬퍼 파일을 **Read 도구로 읽고** 지시에 따른다.
+**🔴 프로젝트 기반 분리 (강제)**: `> 대상 프로젝트:`가 2개+ (쉼표 구분) → **프로젝트별 `_todo-N.md` 강제 분리** (작업 수와 무관). child(의존성 없는 쪽)에 낮은 N, parent(child를 import하는 쪽)에 높은 N 부여. parent의 `> 선행조건:`에 child `_todo-N.md` 상대경로 자동 기재.
+
+**Phase 기반 분리**: 작업 수가 31개 이상이고, 상호 의존 없는 Phase 그룹이 2개 이상 존재할 때 분리. Phase 간 순차 의존(A의 출력이 B의 입력)이면 같은 파일에 유지.
+
+**실행:** 같은 폴더의 `_template.md`를 **Read 도구로 읽고** 지시에 따른다.
 
 ### 4단계: wtools/TODO.md 동기화 (wtools만 해당)
 
-**wtools 감지 조건**: 현재 디렉토리에 `common/` 폴더가 있는지 확인
+**wtools 감지 조건**: 현재 디렉토리에 `common/tools/` 폴더가 있는지 확인
 - **있으면**: wtools 내부 → 아래 동기화 실행
 - **없으면**: 외부 프로젝트 → 이 단계 **스킵**
 
@@ -78,13 +84,24 @@ $config = Get-Content $configPath | ConvertFrom-Json
 4. **"마지막 업데이트" 날짜를 오늘로 Edit**
 5. **반드시 Edit 완료 후 다시 Read하여 반영을 확인한다** (Read → Edit → Read 패턴)
 
+### 4.5단계: plan 정합성 검증 (필수)
+
+plan 작성 후, 최종 검증 전에 **코드 대비 기본 검증**을 수행한다.
+검증 체크리스트 상세: [_verify-checklist.md](../../docs/_verify-checklist.md)
+
+**최소 검증 항목 (V1 + V2):**
+1. **V1. 경로 존재 검증**: plan에 명시된 모든 파일 경로에 대해 Glob/Read로 실제 존재 확인. 존재하지 않는 경로 발견 시 즉시 Edit으로 수정.
+2. **V2. 참조 전수 조사**: plan이 변경하려는 주요 함수/변수/키를 Grep으로 검색. plan이 커버하지 않는 참조 파일 발견 시 해당 파일을 plan에 추가.
+
+발견 시 즉시 수정 (Edit) → Read로 수정 확인 후 다음 단계로.
+
 ### 5단계: 최종 검증 (필수)
 
 안내 출력 **전에** 아래 5항목을 Read로 확인. 하나라도 실패 시 해당 단계로 돌아가 수정.
 
-1. **plan 파일 존재** — 모드A: `docs/plan/`, 모드B: `docs/archive/`
-2. **TODO 체크박스 존재** — 모드A: plan 내부, 모드B: `_todo.md` 파일
-3. **모드B 역참조** — `_todo.md`의 `> 계획:` 링크가 archive를 가리킴
+1. **plan 파일 존재** — `docs/plan/`에 대표 문서 존재
+2. **TODO 체크박스 존재** — 단일: plan 내부에 체크박스. 분리: 각 `_todo-N.md`에 체크박스
+3. **분리 시 링크 정합성** — 대표 문서의 `> **실행 TODO:**` 링크가 실제 `_todo-N.md` 파일을 가리킴. 각 `_todo-N.md`의 `> 계획서:` 링크가 대표 문서를 가리킴
 4. **프로젝트 TODO.md** — Pending에 plan 링크 항목 존재
 5. **wtools/TODO.md** — 해당 프로젝트 섹션에 항목 + 날짜 오늘
 
@@ -93,8 +110,7 @@ $config = Get-Content $configPath | ConvertFrom-Json
 최종 검증 통과 후, 생성/수정된 문서 파일을 자동 커밋한다.
 
 **스테이징 대상 (변경된 파일만):**
-- wtools: `common/docs/plan/*.md`, `common/docs/archive/*.md`, `TODO.md`, `docs/DONE.md`
-- 외부 프로젝트: `docs/plan/*.md`, `docs/archive/*.md`, `TODO.md`, `docs/DONE.md`
+- CLAUDE.md 문서 위치 규칙의 plan/archive 경로의 `*.md` + `TODO.md`, `docs/DONE.md`
 
 **커밋 실행 절차 (반드시 이 순서):**
 1. `git status --porcelain` — 변경 파일 목록 확인
@@ -109,8 +125,8 @@ $config = Get-Content $configPath | ConvertFrom-Json
 ## 🔴 자동 커밋 안전 규칙
 
 git add 허용 경로 (화이트리스트):
-- `docs/plan/**/*.md`, `common/docs/plan/**/*.md`
-- `docs/archive/**/*.md`, `common/docs/archive/**/*.md`
+- CLAUDE.md 문서 위치 규칙의 plan 경로/**/*.md
+- CLAUDE.md 문서 위치 규칙의 archive 경로/**/*.md
 - `TODO.md`, `docs/DONE.md`
 
 git add 금지 경로:
@@ -129,7 +145,6 @@ git add 금지 경로:
 
 **올바른 add 방법 (파일명 명시):**
 - `git add "docs/plan/2026-03-05_foo.md"`
-- `git add "common/docs/plan/2026-03-05_bar.md"`
 - `git add "TODO.md"`
 
 ### 6단계: 안내
@@ -137,12 +152,13 @@ git add 금지 경로:
 ```
 계획 문서 생성 완료
 
-[모드 A]
-plan: common/docs/plan/YYYY-MM-DD_{주제}.md (분석 + TODO 포함)
+[단일]
+plan: docs/plan/YYYY-MM-DD_{주제}.md (분석 + TODO 포함, N phases, M tasks)
 
-[모드 B]
-plan: {archive 경로} (분석용, 아카이브됨)
-todo: common/docs/plan/YYYY-MM-DD_{주제}_todo.md (N phases, M tasks)
+[분리]
+plan: docs/plan/YYYY-MM-DD_{주제}.md (대표 문서)
+todo-1: docs/plan/YYYY-MM-DD_{주제}_todo-1.md (Phase 1~3, N tasks)
+todo-2: docs/plan/YYYY-MM-DD_{주제}_todo-2.md (Phase 4~6, M tasks)
 
 다음 단계:
 - 검토 후 수정이 필요하면 말씀해주세요
@@ -158,26 +174,44 @@ todo: common/docs/plan/YYYY-MM-DD_{주제}_todo.md (N phases, M tasks)
 
 **대상**: Python 코드를 수정하는 모든 plan. 프론트엔드/PS1은 제외.
 
-### 필수 4-Phase 테스트 구조
+### 필수 5-Phase 테스트 구조
 
-구현 Phase 뒤에 반드시 아래 4개 Phase를 **체크박스로** 포함한다.
+구현 Phase 뒤에 반드시 아래 5개 Phase를 **체크박스로** 포함한다.
 각 TC는 **개별 체크박스** — 묶어서 하나로 쓰기 금지.
 
-| Phase | 내용 | 포함 조건 |
-|-------|------|----------|
-| **T1: TC 작성** | RIGHT-BICEP + CORRECT 기반, 함수별 개별 체크박스 | Python 수정 시 항상 |
-| **T2: TC 검증 및 수정** | 실행 → passed 확인 → 실패 수정 → 회귀 확인 | Python 수정 시 항상 |
-| **T3: E2E 테스트** | mock 기반 end-to-end 흐름 검증 | E2E 존재 시 |
-| **T4: HTTP 통합** | `METHOD endpoint` 정상/에러 응답 검증 | API 변경 시 |
+| Phase | 내용 | 실행 시점 | 포함 조건 |
+|-------|------|----------|----------|
+| **T1: TC 작성** | RIGHT-BICEP + CORRECT 기반, 함수별 개별 체크박스 | `/implement` | Python 수정 시 항상 |
+| **T2: TC 검증 및 수정** | 실행 → passed 확인 → 실패 수정 → 회귀 확인 | `/implement` | Python 수정 시 항상 |
+| **T3: 재현/통합 TC** | mock 최소화, 실제 의존성(git, 파일시스템, 환경변수 등) 사용. 근본 원인 재현 + 수정 검증 | `/implement` (워크트리 OK) | **fix: 필수**, feat: 권장 |
+| **T4: E2E 테스트** | mock 기반 end-to-end 흐름 검증 | `/merge-test` | E2E 존재 시 |
+| **T5: HTTP 통합** | `METHOD endpoint` 정상/에러 응답 검증. **다른 프로젝트의 API를 통해 간접 실행되는 모듈**(예: plan-runner → monitor-page admin API)은 해당 API 레벨 E2E 필수 | `/merge-test` | API 변경 시, 또는 **API를 통해 간접 실행되는 모듈의 내부 로직 변경 시** |
 
-**T3/T4 스킵 규칙:**
-- **Phase 자체 생략 금지** — 스킵하더라도 반드시 Phase 헤더 + 스킵 사유 체크박스를 남긴다:
-  `- [x] T3 E2E — 스킵: {구체적 사유}` (예: "API 엔드포인트 변경 없음, 내부 함수만 수정")
-- **금지 사유 (이런 이유로 스킵하면 안 됨):**
-  - "단위 테스트로 커버됨" — T3/T4는 단위 테스트와 검증 범위가 다르므로 대체 불가
-  - "수동 테스트" — T3/T4는 pytest로 자동 실행하는 테스트임
+**T3 규칙 (재현/통합 TC):**
+- **fix: plan이면 필수** — 근본 원인을 실제 환경에서 재현하는 TC 1개 이상 + 수정 후 통과 검증
+- mock은 **외부 API만** 허용. git, 파일시스템, 환경변수 등 로컬 의존성은 **실물 사용**
+- `/implement`에서 T2 직후 실행 (서버 불필요, 워크트리에서 실행 가능)
+- **스킵 허용 사유** (매우 제한적): 순수 문서/주석/타입 힌트/설정값 변경만
+- **스킵 금지 사유:**
+  - "단위 테스트로 커버됨" — mock과 실물은 다르다
+  - "내부 함수만 수정" — 내부 함수가 외부 의존성을 쓰면 의미 없음
+  - "API 변경 없음" — T3는 API가 아니라 통합 동작 검증
+
+**T4/T5 해당 없음 규칙:**
+- **Phase 헤더는 유지**하되, 해당 없는 경우 **블록쿼트로 사유만 기재. 체크박스 생성 금지**:
+  `> T4 E2E 해당 없음: {구체적 사유}`
+- **체크박스 = 수행할 작업.** 실행하지 않을 항목은 체크박스로 만들지 않는다.
+- **금지 사유 (이런 이유로 해당 없음 처리하면 안 됨):**
+  - "단위 테스트로 커버됨" — T4/T5는 단위 테스트와 검증 범위가 다르므로 대체 불가
+  - "수동 테스트" — T4/T5는 pytest로 자동 실행하는 테스트임
   - "실제 환경 필요" — 워크트리에서 못 돌리는 건 스킵 사유가 아님, `/merge-test`에서 main 머지 후 실행
-- T3/T4 실행 시점: 워크트리 머지 후 main에서 (`/merge-test` 스킬)
+  - "API 변경 없음" (간접 실행 모듈) — plan-runner처럼 다른 프로젝트 API를 통해 실행되는 모듈은 내부 로직 변경도 API 레벨 결과를 깨뜨릴 수 있음. **반드시 해당 API를 통한 E2E 테스트 포함**
+- T4/T5 실행 시점: 워크트리 머지 후 main에서 (`/merge-test` 스킬)
+
+**🔴 간접 실행 모듈의 T5 규칙 (plan-runner 등):**
+- 모듈이 직접 HTTP API를 노출하지 않더라도, **다른 프로젝트의 API를 통해 트리거**되는 경우 T5는 해당 API 레벨 E2E로 작성
+- 예: plan-runner 내부 로직 수정 → monitor-page admin API(`POST /api/v1/dev-runner/run`)로 실행 → plan 체크박스 최종 상태 검증
+- 이 규칙의 근거: plan-runner T4/T5 파이프라인에서 동일 현상 5회 재발 — 모두 단위 테스트만으로 검증하여 함수 간 계약 불일치를 놓침
 
 **T1 TC 카테고리** (R·B·E 필수, 나머지 해당 시):
 - **RIGHT-BICEP**: R(정상), B(경계), I(역), C(교차), E(에러), P(성능)

@@ -11,23 +11,41 @@ skills:
 
 너는 전달받은 계획을 구현하고 완료 처리하는 에이전트다.
 
+## I/O Contract
+
+**Input**: plan result object (PROJECT, TASK, SOURCE, PLAN) + env `PLAN_RUNNER_WORKTREE_PATH` (워크트리 경로)
+**Output**: `===AUTO-IMPL-RESULT===` with STATUS(`SUCCESS`/`FAILED`/`SKIPPED`), MANUAL(`true` — 수동 작업 시), PROJECT, TASK, COMMITS
+
 ## 실행 흐름
 
 1. 전달받은 계획(PROJECT, TASK, SOURCE, PLAN)을 파악한다
+   - SOURCE 파일에 `> **실행 TODO:**` 링크가 있으면 (분리된 대형 계획): 각 링크 대상 `_todo-N.md`를 Read하여 미완료(`[ ]`)가 남은 첫 번째 파일을 작업 대상으로 사용한다
+   - `> **실행 TODO:**` 링크가 없으면: 기존 동작 — SOURCE 파일 자체 또는 기존 `_todo.md`에서 미완료 항목 읽기 (하위 호환)
    - planResult가 비어있거나 `PRIORITY: SKIP-PLAN`인 경우, SOURCE에 지정된 plan 파일 원본을 읽어서 미완료 항목(`- [ ]`)을 구현 대상으로 사용한다
    - **[예외] SOURCE 파일이 없거나 존재하지 않는 경우**: 구현 내용을 기반으로 임시 plan 파일을 자동 생성 (Write 도구 활용)
-     - 생성 위치: `common/docs/plan/YYYY-MM-DD_{작업명}_auto.md` (`_auto` 접미사 필수)
+     - 생성 위치: CLAUDE.md `문서 위치 규칙`의 plan 경로에 `YYYY-MM-DD_{작업명}_auto.md` (기본: `docs/plan/`, `_auto` 접미사 필수)
      - 생성된 파일을 SOURCE로 삼아 체크박스 관리를 진행한다
    - **plan의 미완료 `[ ]` 항목을 TodoWrite에 등록한다** (각 항목 = 하나의 task)
      - 이렇게 하면 TodoWrite의 in_progress 항목이 곧 plan 체크박스 업데이트 의무가 된다
 2. `/implement` 스킬 로직으로 미완료 항목을 구현한다
-   - 한 항목 완료 후 남은 항목이 있으면 이어서 다음 항목도 진행한다
+   - **🔴 워크트리 스킵 금지**: `PLAN_RUNNER_WORKTREE_PATH`가 설정되어 있으면 파일 유형(md/py/ts 등)에 관계없이 해당 워크트리 경로에서 작업한다. "문서만 수정", "markdown만", "코드 수정 없음" 등의 이유로 원본 디렉토리에서 작업하지 않는다.
+   - **프론트엔드(.svelte, .ts) 수정 전**: `.claude/skills/recurring-patterns/SKILL.md`를 Read한 후 코딩 (패턴 위반 방지)
+   - **금지**: 메인 레포(워크트리가 아닌)에서 `git checkout {plan 브랜치}` 실행 — 메인 레포는 항상 main 유지
+   - **Phase 단위로 연관 항목을 함께 처리한다**. 형제 항목이 같은 파일/모듈을 다루면 자연스럽게 연속 처리한다
+   - 한 세션에서 처리할 수 있는 모든 미완료 항목을 처리하고 결과 블록을 출력한다
    - 급하지 않다 — 각 항목을 충실히 구현하되, 세션이 끝나기 전에 자연스럽게 다음 항목으로 넘어가라
-   - **사람의 눈/판단이 필수인 항목**(디자인 일치, 색상 가독성, 레이아웃 미관 등)만 스킵하고 MANUAL_TASKS로 분리
+   - **사람의 눈/판단이 필수인 항목**(디자인 일치, 색상 가독성, 레이아웃 미관 등)만 수동 작업으로 판정하고, `STATUS: SKIPPED` + `MANUAL: true`를 출력하라. plan-runner가 해당 항목에 `(→ MANUAL_TASKS)` 태그를 자동 추가한다.
    - 스크립트 실행, 빌드 확인, T1/T2 테스트 등 CLI로 실행 가능한 항목은 **수동이 아님** — 직접 실행하라
-   - **단, T3(E2E)/T4(HTTP 통합) Phase 체크박스는 터치 금지** — `/merge-test` 전담. "단위 TC로 커버됨", "수동 테스트", "실제 환경 필요" 등의 사유로 스킵 체크도 금지
-   - 각 항목 완료 후 plan 파일의 체크박스를 `[x]`로 즉시 업데이트 (T3/T4 제외)
-   - 수정이 발생하지 않았지만 이미 완료된 항목도 `[x]`로 체크 (코드가 이미 존재하는 경우, T3/T4 제외)
+   - **단, T4(E2E)/T5(HTTP 통합) Phase 체크박스는 터치 금지** — `/merge-test` 전담. "단위 TC로 커버됨", "수동 테스트", "실제 환경 필요" 등의 사유로 스킵 체크도 금지
+   - **T3(재현/통합TC)는 T1/T2와 동일하게 실행 대상** — T2 직후 실행하고 체크
+   - **fix: plan인 경우** (파일명에 `_fix-`가 포함되거나 제목이 `fix:`로 시작):
+     T2 완료 후, T3 실행 전에 **"Phase R: 재발 경로 분석"** 체크박스를 실행한다:
+     1. Grep으로 이번 구현에서 수정한 함수/변수/키를 참조하는 모든 파일 검색
+     2. 각 경로별 "동일 버그 발생 가능성" 판정 → 방어됨/미방어 표 작성
+     3. 미방어 경로 발견 시 해당 경로에 방어 코드 추가 후 체크
+     4. Phase R 완료 후 T3로 진행
+   - 각 항목 완료 후 plan 파일의 체크박스를 `[x]`로 즉시 업데이트 (T4/T5 제외)
+   - 수정이 발생하지 않았지만 이미 완료된 항목도 `[x]`로 체크 (코드가 이미 존재하는 경우, T4/T5 제외)
    - TODO.md 업데이트 (Pending → In Progress)
 
    ### 🔴 항목 완료 후 반드시 실행 (다음 항목 진행 전 게이트)
@@ -39,6 +57,7 @@ skills:
    - 코드 작성
 3. **빌드/테스트 검증 (커밋 전 필수)**
    - plan 문서에 `npm run build`, `pytest` 등 빌드/테스트 체크박스가 있으면 **반드시 실행**
+   - **⚠️ 워크트리 예외**: 워크트리에서 작업 중(`PLAN_RUNNER_WORKTREE_PATH` 설정됨 또는 plan 헤더에 `> worktree:` 있음)이면 `npm run build`/`npm run check` 체크박스는 `[ ]` 유지. 출력: `[SKIP] 워크트리 — 프론트엔드 빌드는 /merge-test에서 실행`
    - 빌드 실패 시: 원인 파악 → 코드 수정 → 재빌드 → 성공할 때까지 반복
    - 빌드 성공 후에만 plan 체크박스를 `[x]`로 업데이트
    - **빌드를 스킵하고 완료 처리하는 것은 금지** — 빌드 체크박스가 `[ ]`인 채 커밋하면 안 된다
@@ -47,8 +66,11 @@ skills:
 4. **🔴 완료 전 체크박스 보정 (커밋 전 필수)**
    - plan 파일을 Read로 다시 읽는다
    - 구현 완료했는데 `[ ]`로 남아있는 항목이 있으면 `[x]`로 Edit
-   - **T3/T4 Phase 체크박스는 보정 대상에서 제외** — `/merge-test` 전담
+   - **T4/T5 Phase 체크박스는 보정 대상에서 제외** — `/merge-test` 전담
    - 이 단계는 구현 중 놓친 체크박스를 최종 정리하는 안전망이다
+4.5. 고아 pytest 정리 (오류 무시)
+   - Bash: `powershell.exe -ExecutionPolicy Bypass -File "D:\work\project\tools\monitor-page\scripts\kill-orphan-procs.ps1"`
+   - 실패해도 커밋 진행에 영향 없음
 5. **🔴 모든 변경사항은 커밋으로 마무리 — `/done` 및 `auto-done.ps1` 호출 절대 금지**
    - auto-impl은 아카이브, TODO→DONE 이동, wtools/TODO.md 동기화를 **하지 않는다**
    - 구현 완료 후 할 일은 **커밋 하나뿐**:
@@ -69,7 +91,7 @@ plan 문서 없이 진행된 소규모 수정이나 버그 픽스의 경우, 나
 
 ### 기록 위치
 - **단일 프로젝트**: 해당 `{project}/docs/DONE.md`에 추가 기입 (필요 시 파일 생성)
-- **공통/다중 프로젝트**: `common/docs/history/YYYY-MM-DD_{작업명}-changes.md` 파일 신규 생성
+- **공통/다중 프로젝트**: CLAUDE.md `문서 위치 규칙`의 history 경로에 `YYYY-MM-DD_{작업명}-changes.md` 신규 생성 (기본: `docs/history/`)
 
 ### 수정 이력 템플릿
 
@@ -92,6 +114,14 @@ plan 문서 없이 진행된 소규모 수정이나 버그 픽스의 경우, 나
 
 {plan 파일 없이 진행된 이유 또는 기타}
 ```
+
+## 관련 경로
+
+구현 시 가장 빈번한 수정 대상:
+- `app/modules/{module}/services/` — 백엔드 서비스 로직
+- `app/routes/` — API 라우트
+- `frontend/src/` — 프론트엔드 (SvelteKit)
+- `app/migrations/*.sql` — DB 마이그레이션
 
 ## 추가 테스트 실행 규칙 (선택)
 
@@ -122,6 +152,18 @@ COMMITS: {커밋 메시지들}
 ===END===
 ```
 
+수동 작업으로 판정한 경우 `MANUAL: true` 필드를 추가한다:
+
+```
+===AUTO-IMPL-RESULT===
+PROJECT: {프로젝트명}
+TASK: {완료된 작업}
+STATUS: SKIPPED
+MANUAL: true
+COMMITS:
+===END===
+```
+
 ### STATUS 판단 기준
 
 | STATUS | 조건 |
@@ -129,25 +171,27 @@ COMMITS: {커밋 메시지들}
 | SUCCESS | 구현 완료 + 필수 빌드 통과 + 커밋 성공 |
 | FAILED | 구현 중 오류, 빌드 실패(수정 후에도 실패), 커밋 실패 등 |
 | SKIPPED | 구현할 항목이 없음 (이미 완료됨, 또는 plan의 모든 [ ]가 이미 구현된 상태) |
+| SKIPPED + MANUAL: true | 현재 항목이 수동 작업(사람 눈/판단 필수)으로 판정됨 |
 
 **중요**: 구현할 게 없으면 반드시 `STATUS: SKIPPED`를 출력하라. SKIPPED는 실패가 아니다.
 
 **참고**: `PRIORITY: SKIP-PLAN`으로 호출된 경우에도 plan 파일에 미완료 항목이 있으면 반드시 구현한다. SKIP-PLAN은 "plan 보완 불필요"이지 "구현 불필요"가 아니다.
 
-### 🔴 RESULT 블록 출력 후 안내 (STATUS: SUCCESS 시 필수)
+### RESULT 블록 출력 후 안내 (STATUS: SUCCESS 시)
 
-RESULT 블록 출력 직후, 다음 단계를 사용자에게 안내한다:
+> **프롬프트에 `[CALLER: plan-runner]`가 포함된 경우 이 안내를 생략한다.** plan-runner가 자동으로 다음 단계를 실행하므로 토큰 낭비.
+
+사용자가 직접 실행한 경우에만, RESULT 블록 출력 직후 다음 단계를 안내한다:
 
 ```
 ## 다음 단계
 
 구현 및 커밋이 완료되었습니다. 아래 순서로 마무리하세요:
 
-1. (worktree 사용 시) `/merge-test` — impl 브랜치를 main에 머지 + T3/T4 통합테스트
-2. `/done` — plan 아카이브, TODO→DONE 이동, DONE.md 동기화, 완료 커밋
+1. `/merge-test` — 머지 + T4/T5 통합테스트 + 완료처리(archive, TODO→DONE, 커밋) 일괄 실행
 ```
 
-> plan 헤더에 `> branch:` 필드가 **없으면** 1단계 생략, 바로 `/done` 호출.
+> 워크트리 유무에 관계없이 `/merge-test` 호출. 워크트리 없으면 머지 스킵하고 done 처리만 실행.
 
 ## 커밋 규칙
 
@@ -198,13 +242,16 @@ v2 파이프라인(`--pipeline v2`)에서 호출 시:
 
 ### 워크트리 동작
 
+- **🔴 워크트리 스킵 금지** — 파일 유형(md/py/ts 등)에 관계없이 `--worktree-path`로 전달된 경로에서 작업. "문서만 수정"을 이유로 원본 디렉토리에서 작업 금지.
 - **워크트리 경로**: plan-runner가 `--worktree-path` 인자로 전달. 해당 경로에서 작업
+- **main 브랜치 보호** — 워크트리에서 작업 시 메인 레포의 `git checkout`은 절대 실행 금지. 메인 레포 브랜치 변경이 필요한 상황이면 작업을 중단하고 에러를 반환한다.
 - **서버 기동 금지** — `uvicorn`, `npm run dev`, `npm start` 등 금지 (워크트리에서는 포트 바인딩 불가)
+- **프론트엔드 빌드/체크 금지** — `npm run build`, `npm run check`, `npx vite build` 등 금지 (워크트리에는 node_modules 없음, 구조적 불가. `/merge-test`에서 main 머지 후 실행)
 
 ### 체크박스 범위
 
 - **구현 체크박스만 처리** — Phase 1~N의 구현 항목(`- [ ]`)만 `[x]`로 전환
-- **T1~T4 테스트 Phase 체크박스 터치 금지** — test-unit/test-e2e 에이전트 전담
+- **T1~T5 테스트 Phase 체크박스 터치 금지** — test-unit/test-e2e 에이전트 전담
 - pytest, npm test 등 테스트 실행 금지
 
 ### 커밋 규칙
