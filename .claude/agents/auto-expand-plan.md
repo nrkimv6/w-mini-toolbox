@@ -22,6 +22,12 @@ tools:
 **Input**: 상태가 `검토대기`로 부여된 plan 파일
 **Output**: `===AUTO-EXPAND-PLAN-RESULT===` with STAGE(`expand-plan`), PROJECT, TASK, SOURCE, PRIORITY, ENHANCED-PLAN
 
+## 2-Step 호환 (codex)
+
+- `codex`/`cc-codex` 실행에서는 runner가 이 단계를 `review` + `apply`로 분리 실행할 수 있다.
+- 분리 실행 시 review/apply 에이전트는 동일 결과 블록 키(`PROJECT/TASK/SOURCE/PRIORITY/STAGE/ENHANCED-PLAN`)를 유지한다.
+- apply 단계는 done marker JSON(`status/source_plan/applied_at/runner_id`)을 함께 기록한다.
+
 ## 전제
 
 - simple-plan이 상태를 `검토대기`로 부여한 이후에 실행됨
@@ -33,6 +39,8 @@ tools:
 2. 코드베이스를 분석한다 (Read only)
    - 수정 대상 파일의 현재 코드 확인
    - 기존 패턴, 임포트, 의존성 파악
+   - `rg`/`Grep` 검색 시 archive 디렉토리는 반드시 제외: `--glob '!docs/archive/**'` 및 `--glob '!.worktrees/plans/docs/archive/**'`
+   - archive 파일은 파일명을 이미 아는 경우에만 `Read`로 개별 파일 열람 허용
 3. 2레벨 원자 TODO로 분해:
    - **상위**(번호): 기능/개념 단위
    - **하위**(대시): 파일 경로 + 구체적 변경 내용 (초보 할당 가능)
@@ -66,6 +74,13 @@ tools:
      (c) 테스트 Phase(T1~T5)는 직전 구현 Phase와 같은 `_todo-N.md`에 유지
    - **30개 이하 또는 독립 묶음 1개** → 인라인 체크박스 유지 (분리 안 함)
    - **⚠️ 프로젝트별 분리와 중첩 분리(`_todo-1a.md`)는 하지 않는다** — 단일 프로젝트당 하나의 `_todo-N.md` 유지
+3.6. **파일 이동/구조변경 영향 분석 — Phase IA 자동 삽입**:
+   plan/TODO에 파일 이동·삭제·이름변경·경로변경 키워드가 감지되면(mv, Move-Item, git mv, rename, 이동, 재구성, reorganize 등), 구현 Phase 직후·테스트 Phase 직전에 "Phase IA: 이동 영향 분석 및 참조처 수정"을 자동 삽입한다:
+   - 이동 대상의 기존 경로를 프로젝트 전체에서 Grep 검색 (import, source, 설정 파일, 프로세스 실행 참조)
+   - 이동 대상 파일 내 상대경로 깊이 탐지 패턴(`$PSScriptRoot`, `Split-Path`, `__file__`, `Path().parent`) 검증
+   - 참조처 일괄 수정 + 잔존 참조 0건 재검색 확인
+   키워드 미감지 시 건너뛴다.
+
 3.7. **🔴 fix: plan 감지 시 — Phase R 자동 삽입**:
    plan이 아래 조건 중 하나에 해당하면 fix: plan으로 판정:
    - 파일명에 `_fix-` 포함 (예: `2026-03-26_fix-visible-runner.md`)
@@ -87,13 +102,16 @@ tools:
       - ☐ 미방어 경로가 있으면 해당 경로에 방어 코드 추가
       - ☐ 모든 경로 방어 완료 확인 ("전체 방어 완료" 명시, "근본 수정" 표현 금지)
 
-   🔴 fix: plan인데 Phase R이 없으면 /done과 /merge-test에서 차단된다.
+   🔴 fix: plan인데 Phase R이 없으면 /implement, /done, /merge-test에서 차단된다.
    ```
+
+   **Phase R 삽입 후 검증 (필수):** 삽입 완료 후 plan 본문에서 `### Phase R` 또는 `재발 경로 분석` 문자열을 검색한다. 미존재 시 경고 출력 + 재삽입 (1회). 재삽입 후에도 미존재 시 INCOMPLETE 판정 반환.
+
 4. Python/백엔드 수정 시 T1~T5 테스트 Phase 체크박스 생성:
    - T1: TC 작성 (RIGHT-BICEP + CORRECT, 함수별 개별 체크박스)
    - T2: TC 검증 및 수정 (파일별 실행 + passed 확인)
    - T3: 재현/통합 TC (mock 최소화, 실제 의존성 사용. fix: plan이면 필수 — 근본 원인 재현 fixture + TC 체크박스 자동 생성)
-   - T4: E2E 테스트 — **반드시 Glob으로 `tests/**/*e2e*`, `tests/**/*integration*` 파일 탐색 후 결정**. 1개라도 존재하면 포함 필수. "CLI 도구라서", "프레임워크 없어서" 같은 인상 기반 스킵 절대 금지. Phase 헤더 유지, 해당 없으면 **블록쿼트 사유만 기재** (`> T4 해당 없음: {사유}`), **체크박스 생성 금지**
+   - T4: E2E 테스트 — **반드시 Glob으로 `tests/**/*e2e*`, `tests/**/*integration*` 파일 탐색 후 결정**. 1개라도 존재하면 포함 필수. Glob 파일 발견 시 Read하여 TestClient/mock 기반(AsyncMock/MagicMock/patch 다수 사용 + 실서버/Playwright 미사용)이면 T3 재분류. "CLI 도구라서", "프레임워크 없어서" 같은 인상 기반 스킵 절대 금지. Phase 헤더 유지, 해당 없으면 **블록쿼트 사유만 기재** (`> T4 해당 없음: {사유}`), **체크박스 생성 금지**
    - T5: HTTP 통합 테스트 — **반드시 Glob으로 `tests/**/*http*`, `tests/**/*api*` 파일 탐색 후 결정**. HTTP 서버가 아닌 것이 코드로 확인된 경우에만 해당 없음 처리. Phase 헤더 유지, **블록쿼트 사유만 기재, 체크박스 생성 금지**
    - **T4/T5 금지 사유**: "단위 테스트로 커버됨", "수동 테스트", "실제 환경 필요", "CLI 도구", "라이브러리" — 이런 이유로 스킵 불가. **Glob 탐색 결과 파일 없음**만 유효한 스킵 사유
    - **🔴 탐색 없이 스킵 결정 = 규칙 위반**: T4/T5 스킵 전 Glob 탐색을 반드시 실행하고 결과를 근거로 제시할 것
@@ -111,9 +129,11 @@ tools:
    - b. 화이트리스트 파일만 **개별** git add (파일 경로 하나씩):
      - 허용: CLAUDE.md `문서 위치 규칙`에 명시된 plan/archive 경로의 `*.md` + `TODO.md`, `docs/DONE.md`
      - **절대 금지**: `git add .` / `git add -A` / 디렉토리명·글로브 패턴
-   - c. `git status --porcelain` 재확인 → 비화이트리스트 파일 있으면 `git reset HEAD {파일}` 로 제거
-   - d. 화이트리스트 파일 0개이면 커밋 중단
-   - e. 커밋 스크립트 실행: `docs: expand-plan + 검증 대기 — {주제}`
+   - c. `git diff --cached --name-only` 결과가 이번 실행의 화이트리스트와 정확히 일치하는지 검증
+   - d. `git diff --cached --name-status` 또는 `git status --porcelain`에 비화이트리스트 파일, `D`, `R`, `RM`, `??` 비대칭이 보이면 **커밋 중단**
+     - `git reset HEAD {파일}`로 일부만 걷어내고 계속 진행하지 않는다.
+   - e. 화이트리스트 파일 0개이면 커밋 중단
+   - f. 커밋 스크립트 실행: `docs: expand-plan + 검증 대기 — {주제}`
 6. 출력 블록 반환
 
 ## 관련 경로
@@ -151,6 +171,7 @@ ENHANCED-PLAN:
 
 - **허용**: plan 문서 Edit (원자 분해, TC 생성, 상태 변경), docs 파일 커밋(Bash — plan/archive/TODO.md/DONE.md 한정)
 - **금지**: 코드 수정, 코드 파일 커밋, 구현 시작
+- **금지**: `docs/archive/` 대상 `rg`/`Grep` 디렉토리 스캔 (개별 `Read`만 허용)
 
 ---
 

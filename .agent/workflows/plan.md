@@ -4,12 +4,12 @@ description: "계획 문서 작성. Use when: 계획해, plan, 아이디어, 기
 
 # 계획 문서 작성
 
-사용자의 아이디어나 요구사항을 `common/docs/plan/`에 계획 문서로 정리합니다.
+사용자의 아이디어나 요구사항을 `.worktrees/plans/docs/plan/`에 계획 문서로 정리합니다.
 
 ## 파일 위치
 
 ```
-common/docs/plan/YYYY-MM-DD_{주제}.md
+.worktrees/plans/docs/plan/YYYY-MM-DD_{주제}.md
 ```
 
 ## 멀티레벨 TODO 구조
@@ -44,7 +44,7 @@ common/docs/plan/YYYY-MM-DD_{주제}.md
 ```markdown
 # {제목}
 
-> 작성일: YYYY-MM-DD
+> 작성일시: YYYY-MM-DD HH:MM
 > 대상 프로젝트: {project-name | 공통}
 > 상태: 초안
 > 진행률: 0%
@@ -104,7 +104,7 @@ Python/백엔드 수정 시 구현 Phase 뒤에 아래 4개 Phase를 **체크박
 ```
 📝 계획 문서가 생성되었습니다!
 
-파일: common/docs/plan/YYYY-MM-DD_{주제}.md
+파일: .worktrees/plans/docs/plan/YYYY-MM-DD_{주제}.md
 
 다음 단계:
 - 검토 후 수정이 필요하면 말씀해주세요

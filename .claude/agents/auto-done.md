@@ -9,16 +9,21 @@ tools: [Read, Edit, Bash, Glob, Grep]
 
 ## I/O Contract
 
-**Input**: `_todo.md` 또는 `_todo-N.md` 절대경로 (프롬프트 첫 줄)
+**Input**: 프롬프트는 다음 순서로 전달된다.
+1. (선택) `스킬 파일: {절대경로}` — monitor-page done 스킬 경로 참조 줄 (없을 수 있음)
+2. `/done {plan_file_path}에 대한 완료 처리를 진행해줘` — plan 파일 경로 포함
+
 **Output**: commit hash 또는 error (`auto-done 완료: {제목}` / `auto-done 실패: {제목}`)
 
 > **트리거**: plan-runner Stage 6 전용 — `_run_auto_done_via_cli()` 호출 시 자동 활성화
 > **모델**: haiku (경량, done flow는 명확한 절차적 작업)
 > **직접 호출 금지**: 이 agent는 plan-runner가 자동 호출. 수동 완료 처리는 `/done` 스킬 사용.
+> **스킬 경로 참조**: 프롬프트에 `스킬 파일:` 줄이 있으면 해당 파일을 우선 참조하여 done 절차를 수행한다.
+> 기본 참조 경로: `D:\work\project\tools\monitor-page\.agents\skills\done\SKILL.md`
 
 ## 입력 규약
 
-프롬프트 첫 줄에 plan 파일 절대경로가 전달된다:
+프롬프트 첫 줄에 (선택적으로 스킬 파일 경로 참조가 있고) plan 파일 절대경로가 전달된다:
 
 ```
 /path/to/docs/plan/YYYY-MM-DD_{주제}_todo.md
@@ -75,9 +80,13 @@ done SKILL.md 2단계~8단계를 순서대로 실행:
 
 ### 2. plan 문서 아카이브
 
-- `_todo.md` (또는 모든 `_todo-N.md`) → `docs/archive/` (`git mv`)
-- 대표 문서 또는 원본 plan `.md`가 `docs/plan/`에 있으면 → `docs/archive/`로 함께 이동 (`git mv`)
-- 이미 `docs/archive/`에 있으면 스킵
+- `_path-rules.md` 동적 폴백으로 plan 루트/archive 루트 결정
+- **orphan 도입 프로젝트** (`.worktrees/plans/` 존재): plans 워크트리 내에서 `git mv` 수행
+  - `Set-Location .worktrees/plans` → `git mv docs/plan/... docs/archive/...` → `git add` → `git commit` → `git push`(현재 docs commit root의 upstream) 순으로 진행한다. literal `origin plans` 고정은 금지한다.
+  - plans 워크트리에서 archive 후 commit은 `Resolve-DocsCommitCandidates` 반환 파일만 대상으로 하고, 전체 clean 여부로 gate하지 않는다
+  - unrelated dirty가 남아 있으면 경고만 출력하고 current-run 후보만 커밋한다
+- **orphan 미도입 프로젝트**: 기존 방식 (`_todo.md` → archive 경로 git mv)
+- 이미 archive에 있으면 스킵
 - `git add` 스테이징
 
 ### 3. TODO → DONE 이동
@@ -90,7 +99,8 @@ done SKILL.md 2단계~8단계를 순서대로 실행:
 
 ### 4. DONE.md 아카이브 (10개 초과 시)
 
-- 10개 초과 시 오래된 항목 → `docs/archive/DONE-YYYY-MM.md`로 이동
+- `.worktrees/plans/`가 있으면 오래된 항목 → `.worktrees/plans/docs/archive/DONE-YYYY-MM.md`로 이동
+- `.worktrees/plans/`가 없으면 오래된 항목 → `docs/archive/DONE-YYYY-MM.md`로 이동
 
 ### 5. wtools/TODO.md 동기화
 
