@@ -13,6 +13,11 @@ tools:
   - Bash
 ---
 
+
+<!-- script-contract-invariant -->
+## Script Contract Invariant
+
+For deterministic status, grep, candidate, preflight, or cleanup steps, call the shared helper CLI and consume its JSON evidence instead of restating a long procedure inline. Relevant helpers are `common\tools\auto-done.ps1 -Json`, `common\tools\archive-sweep.ps1 -CandidatesOnly -Json`, `common\tools\plan-advisory-detect.ps1 -Json`, `common\tools\audit-patterns.ps1 -Json`, `common\tools\merge-test-preflight.ps1 -Json`, and `common\tools\merge-test-cleanup.ps1 -Json`. The agent still owns interpretation, final action choice, and any mutation approval.
 # Expand Plan 에이전트 (v2 파이프라인 2단계)
 
 기존 plan을 **2레벨 원자 TODO로 분해**하고, Python 변경 시 **T1~T5 테스트 Phase 체크박스**를 생성한다.
@@ -32,6 +37,12 @@ tools:
 
 - simple-plan이 상태를 `검토대기`로 부여한 이후에 실행됨
 - 코드베이스를 분석(Read)하되, 코드를 수정하지 않는다
+
+## Parent-Child Closeout Contract
+
+- parent-child closeout: `_todo-N.md`를 생성하거나 기존 child plan을 재분해한 경우, parent plan archive/완료 전이가 아니라 parent/child 실행 계약만 갱신한다.
+- parent plan에는 `> **실행 TODO:**` 링크와 child 역참조를 유지하고, 모든 child `_todo-N.md` 완료 검증 전 parent archive를 금지한다.
+- split/closeout 세부 판정은 `.agents/skills/expand-todo/SKILL.md`, `.agents/skills/review-plan/SKILL.md`, `.agents/skills/implement/SKILL.md`를 참조하며, SSOT 표를 agent 본문에 복제하지 않는다.
 
 ## 실행 흐름
 
@@ -64,7 +75,13 @@ tools:
        ```
      (e) T1~T5 테스트 Phase는 해당 프로젝트의 `_todo-N.md`에 포함
      (f) parent의 T4/T5에 `> 테스트명령:` 필드로 프로젝트별 pytest 마커 명시
+     (g) parent-child closeout evidence로 parent plan이 child 완료 전 archive 대상이 아님을 명시
    - **프로젝트 1개** → 3.5 규모 기반 분리로 진행
+
+3.45. **surface context 인식** (wtools authoring surface):
+   - plan 헤더 `> surface 분류:`가 단일 engine authoring surface(`.agents/`, `.claude/`, `.gemini/`, `common/tools/plan-runner/gemini-agents/`)를 가리키면, 해당 surface의 수정 대상 파일을 최우선으로 Read한다.
+   - 대상 파일의 기존 섹션 구조(절차형 step, 표, TOML wrapper 등), 삽입 위치, 포맷을 확인한 뒤 하위 체크박스를 작성한다.
+   - 헤더가 없으면 실행 체크박스와 파일 경로 헤더의 prefix를 검색해 surface를 추론한다. 그래도 모호하면 `수동 결정 필요`로 남기고 child sub-item을 쓰지 않는다.
 
 3.5. **규모 기반 분리 판단** (프로젝트 분리 후 각 _todo-N 내부, 또는 단일 프로젝트):
    - 체크박스 총 수를 카운트
@@ -72,6 +89,7 @@ tools:
      (a) plan 파일에서 체크박스 섹션을 제거, `> **실행 TODO:**` 링크 목록으로 교체 (Edit)
      (b) 독립 Phase 묶음별 `_todo-N.md` 파일을 Write. 각 파일에 `> 계획서: [plan](./{stem}.md)` 역참조
      (c) 테스트 Phase(T1~T5)는 직전 구현 Phase와 같은 `_todo-N.md`에 유지
+     (d) parent-child closeout evidence로 모든 child `_todo-N.md` 완료 전 parent archive 금지를 명시
    - **30개 이하 또는 독립 묶음 1개** → 인라인 체크박스 유지 (분리 안 함)
    - **⚠️ 프로젝트별 분리와 중첩 분리(`_todo-1a.md`)는 하지 않는다** — 단일 프로젝트당 하나의 `_todo-N.md` 유지
 3.6. **파일 이동/구조변경 영향 분석 — Phase IA 자동 삽입**:
@@ -113,6 +131,12 @@ tools:
    - T3: 재현/통합 TC (mock 최소화, 실제 의존성 사용. fix: plan이면 필수 — 근본 원인 재현 fixture + TC 체크박스 자동 생성)
    - T4: E2E 테스트 — **반드시 Glob으로 `tests/**/*e2e*`, `tests/**/*integration*` 파일 탐색 후 결정**. 1개라도 존재하면 포함 필수. Glob 파일 발견 시 Read하여 TestClient/mock 기반(AsyncMock/MagicMock/patch 다수 사용 + 실서버/Playwright 미사용)이면 T3 재분류. "CLI 도구라서", "프레임워크 없어서" 같은 인상 기반 스킵 절대 금지. Phase 헤더 유지, 해당 없으면 **블록쿼트 사유만 기재** (`> T4 해당 없음: {사유}`), **체크박스 생성 금지**
    - T5: HTTP 통합 테스트 — **반드시 Glob으로 `tests/**/*http*`, `tests/**/*api*` 파일 탐색 후 결정**. HTTP 서버가 아닌 것이 코드로 확인된 경우에만 해당 없음 처리. Phase 헤더 유지, **블록쿼트 사유만 기재, 체크박스 생성 금지**
+   - **T4 live contract**: T4 체크박스/테스트명령은 `pytest.mark.e2e`와 `pytest.mark.http_live`를 함께 가진 live smoke만 허용한다. frontend readiness 또는 `/merge-test` readiness 전제를 명시하고, `page.route("**/*", ...)` 전체 route mock만으로 화면을 구성한 테스트는 T4가 아니라 T3/mock-only로 재분류한다.
+   - **T4 UI evidence contract**: UI 기능 항목은 `selector -> action -> assertion` 순서로 초원자 작업을 만든다. `selector_count > 0` read-back 없이 DOM-only, source-contract-only, 또는 collect-only `0 selected` evidence만 있으면 T4가 아니라 live smoke follow-up으로 남긴다.
+   - **T4 feature-area 원칙**: T4는 plan 단위로 smoke 파일을 양산하지 않고 feature area/UI 화면 단위 live smoke를 우선 재사용한다. 기존 live smoke 파일이 있으면 그 파일에 TC를 추가하고, mock-only 파일만 있으면 기존 테스트는 T3로 남긴 뒤 live smoke follow-up TODO를 만든다.
+   - **T5 live contract**: T5 체크박스/테스트명령은 `pytest.mark.http_live`와 running API 접근 evidence를 함께 요구한다. `requests.get("http://localhost:8001/...")`, `httpx.get("http://localhost:8001/...")`, 또는 project live readiness helper 같은 localhost live 호출이 있어야 하며, `from fastapi.testclient import TestClient` 단독 증거는 T5가 아니라 T3/TestClient 통합으로 재분류한다.
+   - **T5 worker/scheduler contract**: worker/scheduler 변경이면 process fingerprint 또는 `runtime_fingerprint`, worker registration log, readiness/API read-back을 별도 leaf로 생성한다.
+   - **T4/T5 분류 marker**: 계획서에는 필요 시 `live`, `mock_only`, `http_live`, `testclient_only`, `absent` 중 하나와 `needs_live_tc` 여부를 evidence로 남긴다. `mock_only`/`testclient_only`면 기존 테스트를 삭제하지 않고 T3 재분류 + live T4/T5 follow-up을 생성한다.
    - **T4/T5 금지 사유**: "단위 테스트로 커버됨", "수동 테스트", "실제 환경 필요", "CLI 도구", "라이브러리" — 이런 이유로 스킵 불가. **Glob 탐색 결과 파일 없음**만 유효한 스킵 사유
    - **🔴 탐색 없이 스킵 결정 = 규칙 위반**: T4/T5 스킵 전 Glob 탐색을 반드시 실행하고 결과를 근거로 제시할 것
 4.5. **TC Phase 스킵 재검증** (Python 변경 시 필수):
@@ -124,6 +148,14 @@ tools:
    4. 기존 plan의 스킵 사유가 금지 사유(step 4 T4/T5 금지 사유 목록)에 해당하는지 확인
    🔴 **이 단계를 건너뛰면 규칙 위반.** 기존 plan의 `[x] 스킵` 체크박스는 재검증 대상이지 확정된 결과가 아니다.
 5. 상태를 `검증중`으로 Edit (auto-verify 에이전트가 검증 후 `검토완료`로 전이)
+5.3. **surface isolation split 검증** (wtools authoring surface):
+   - 실행 체크박스 또는 파일 경로 헤더에 두 개 이상 engine authoring surface(`.agents/`, `.claude/`, `.gemini/`, `common/tools/plan-runner/gemini-agents/`)가 섞였는지 확인한다.
+   - 두 개 이상 surface가 한 실행 체크박스 아래 섞이면 parent를 coordination-only로 남기고 surface별 child TODO로 분리한다. parent에는 `> **실행 TODO:**` 링크, owner/완료 gate, child 진행률 인덱스만 남긴다.
+   - 이미 child가 생성되어 있으면 `split-applied`, 아직 분리 전이면 `split-required`로 기록한다. 둘 다 expand 실패가 아니다.
+   - 각 child의 `> 대상 프로젝트:`, `> surface 분류:`, `> 선행조건:`은 단일 surface 기준으로 작성하고, 다른 engine surface 파일 경로를 하위 체크박스에 넣지 않는다.
+   - surface split으로 child plan을 생성할 때 초기 파일은 phase 헤더와 상위 작업명까지만 작성하고, sub-item 작성은 대상 surface 파일을 Read하는 expand 단계에 위임한다.
+   - 문구 복제를 강제하지 않는다. 각 surface child는 자기 결과 구조와 실행 메커니즘에 맞게 의미를 표현한다.
+   - child plan 실행 체크박스의 sub-item 작성 전 대상 surface의 수정 대상 파일을 Read해 기존 섹션 구조와 삽입 위치를 확인한다. 삽입 위치와 포맷이 실제 파일 구조와 일치해야 한다.
 5.5. **계획서 커밋** (Bash 도구) — 반드시 아래 순서로 실행
    - a. `git status --porcelain` — 변경 파일 목록 확인
    - b. 화이트리스트 파일만 **개별** git add (파일 경로 하나씩):

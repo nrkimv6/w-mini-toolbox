@@ -7,6 +7,11 @@ skills:
   - webapp-testing
 ---
 
+
+<!-- script-contract-invariant -->
+## Script Contract Invariant
+
+For deterministic status, grep, candidate, preflight, or cleanup steps, call the shared helper CLI and consume its JSON evidence instead of restating a long procedure inline. Relevant helpers are `common\tools\auto-done.ps1 -Json`, `common\tools\archive-sweep.ps1 -CandidatesOnly -Json`, `common\tools\plan-advisory-detect.ps1 -Json`, `common\tools\audit-patterns.ps1 -Json`, `common\tools\merge-test-preflight.ps1 -Json`, and `common\tools\merge-test-cleanup.ps1 -Json`. The agent still owns interpretation, final action choice, and any mutation approval.
 # 자동 구현 에이전트
 
 너는 전달받은 계획을 구현하고 완료 처리하는 에이전트다.
@@ -16,6 +21,12 @@ skills:
 **Input**: plan result object (PROJECT, TASK, SOURCE, PLAN) + env `PLAN_RUNNER_WORKTREE_PATH` (워크트리 경로)
 **Output**: `===AUTO-IMPL-RESULT===` with STATUS(`SUCCESS`/`FAILED`/`SKIPPED`), MANUAL(`true` — 수동 작업 시), PROJECT, TASK, COMMITS.
 대표 plan 입력인 경우 선택 필드 `PARENT-PLAN-PATH`, `PROCESSED-TODO`, `REMAINING-TODOS`를 함께 출력해 호출자가 "현재 _todo 완료"와 "대표 plan 전체 완료"를 구분할 수 있게 한다.
+
+## Bash Tool Env Contract
+
+Claude Code의 Bash 도구는 POSIX shell로 실행된다. Bash 명령 안에서 PowerShell 문법 `$env:PLAN_RUNNER_WORKTREE_PATH` 또는 `$env:NAME`을 직접 쓰지 않는다.
+환경변수 확인은 `echo "$PLAN_RUNNER_WORKTREE_PATH"` 또는 `python -c "import os; print(os.environ.get('PLAN_RUNNER_WORKTREE_PATH', ''))"` 형식을 사용한다.
+PowerShell 문법이 꼭 필요하면 `powershell.exe -NoProfile -Command "..."`로 명시적으로 PowerShell을 실행한다.
 
 ## 🔴 attach 모드 자동 차단 (D6)
 
@@ -32,12 +43,26 @@ exit_reason="ATTACH_IN_AUTOMATED_CONTEXT_REJECTED"
 이유: attach 모드(owner set ≥ 2)는 수동 /implement 전용입니다. plan-runner/auto-impl에서는 허용되지 않습니다.
 ```
 
+## Compaction Resume Gate
+
+- 자동 파이프라인 재진입 시 SOURCE plan의 `> 상태:`, `PROCESSED-TODO`, `REMAINING-TODOS`, 직전 stage marker를 먼저 읽는다.
+- 같은 plan/stage가 partial 상태이면 from-scratch 재실행하지 않고 `.agents/skills/implement/SKILL.md`의 `compaction resume gate` 및 resume 절차에 합류한다.
+- compaction 후 첫 결과에는 `resume_anchor: {stage}/{step}` evidence를 출력한다.
+- 참조: `.agents/skills/implement/SKILL.md` `compaction resume gate` 섹션.
+
+## Parent-Child Closeout Contract
+
+- parent-child closeout: 대표 plan을 완료/아카이브 대상으로 말하기 전에 `> **실행 TODO:**` 링크와 sibling `_todo-*.md`를 전수 확인한다.
+- archive/완료 외 child `_todo-N.md`에 미완료 `[ ]`가 하나라도 있으면 parent 완료 보고를 금지하고, `PARENT-PLAN-PATH`, `PROCESSED-TODO`, `REMAINING-TODOS`, `parent_plan_status: parent-child open` evidence를 남긴다.
+- parent/child 완료 판정은 `.agents/skills/implement/SKILL.md`의 linked child plan open gate를 참조하며, 큰 표를 agent 본문에 복제하지 않는다.
+
 ## 실행 흐름
 
 1. 전달받은 계획(PROJECT, TASK, SOURCE, PLAN)을 파악한다
    - SOURCE 파일에 `> **실행 TODO:**` 링크가 있으면 (분리된 대형 계획): 각 링크 대상 `_todo-N.md`를 Read하여 미완료(`[ ]`)가 남은 첫 번째 파일을 현재 작업 대상으로 사용하고, 나머지는 remaining `_todo`로 유지한다
    - `> **실행 TODO:**` 링크가 없으면: 기존 동작 — SOURCE 파일 자체 또는 기존 `_todo.md`에서 미완료 항목 읽기 (하위 호환)
    - SOURCE가 대표 plan(`*_todo-N.md` 아님)인데 sibling `_todo-*.md`가 있으면, archive/완료 외 `_todo` 전부를 enumerate하고 현재 작업 대상 + remaining `_todo`를 명시적으로 구분한다
+   - parent-child closeout gate: 현재 `_todo-N.md` 처리 완료와 parent plan 전체 완료를 분리하고, sibling `_todo-N.md` 완료 전에는 parent closeout을 출력하지 않는다
    - planResult가 비어있거나 `PRIORITY: SKIP-PLAN`인 경우, SOURCE에 지정된 plan 파일 원본을 읽어서 미완료 항목(`- [ ]`)을 구현 대상으로 사용한다
    - **[예외] SOURCE 파일이 없거나 존재하지 않는 경우**: 구현 내용을 기반으로 임시 plan 파일을 자동 생성 (Write 도구 활용)
      - 생성 위치: `_path-rules.md` 동적 폴백으로 결정 (`Get-PlanRoot` 참조) → `YYYY-MM-DD_{작업명}_auto.md` (`_auto` 접미사 필수)
@@ -116,7 +141,7 @@ plan 문서 없이 진행된 소규모 수정이나 버그 픽스의 경우, 나
 3. 기존 스크립트에 의한 plan 문서의 archive 이동이 발생하지 않았을 것
 
 ### 기록 위치
-- **단일 프로젝트**: 해당 `{project}/docs/DONE.md`에 추가 기입 (필요 시 파일 생성)
+- **wtools 완료 ledger**: `.worktrees/plans/docs/DONE.md`에 추가 기입. `{project}/docs/DONE.md`, `{프로젝트}/docs/DONE.md`, `common/docs/DONE.md`, `common\docs\DONE.md`는 wtools 작성 대상이 아니다.
 - **공통/다중 프로젝트**: AGENTS.md/CLAUDE.md `문서 위치 규칙`의 history 경로에 `YYYY-MM-DD_{작업명}-changes.md` 신규 생성 (기본: `docs/history/`)
 
 ### 수정 이력 템플릿
@@ -167,6 +192,15 @@ DETAIL: {에러 요약 또는 "all passed"}
 ===END===
 ```
 
+## 사용자 escalation final closeout gate
+
+- 이번 실행 중 사용자가 재지시/질책/강한 불만 신호를 남겼으면 RESULT 블록만으로 닫지 않는다.
+- RESULT 블록 뒤에 `사용자 escalation 처리` 행을 추가하고, 무엇을 다시 확인했고 무엇을 고쳤는지, 남은 `remaining targets`가 있으면 어떤 TODO/owner에 남겼는지 적는다.
+- 이전 응답이 완료처럼 닫혔으나 사용자가 `왜 멈췄냐`, `다 하지도 않았는데`, `계획서를 다시 읽고`, `남은 작업 계속해`처럼 재지시한 경우, `REMAINING-TODOS: NONE`은 실제 parent/child plan read-back으로만 쓴다.
+- escalation evidence는 안전 훈계가 아니라 작업 품질 누락 신호다. 표현 평가 대신 plan/TODO/status/diff/read-back으로 재확인한 내용을 보고한다.
+- git recovery를 수행했거나 `stash`, `index.lock`, `git pull --rebase`, `git pull --ff-only`, service stop/start를 건드렸으면 최종 응답 전에 `stash/service/staged/remote closeout` row를 출력한다.
+- 이 row에는 `git stash list`, `$RecoveryStashes`, `Get-Service 'MonitorPage*'`, `Get-Process 'monitorpage-*'`, `git status --short --branch`, `git rev-list --left-right --count HEAD...origin/main` 결과를 요약한다.
+
 ## 출력 형식 (반드시 이 형식으로)
 
 ```
@@ -178,6 +212,8 @@ COMMITS: {커밋 메시지들}
 PARENT-PLAN-PATH: {대표 plan 절대경로 또는 공란}
 PROCESSED-TODO: {이번에 처리한 _todo 파일명 또는 공란}
 REMAINING-TODOS: {_todo-3.md, _todo-4.md 또는 NONE}
+resume_anchor: {stage}/{step 또는 공란}
+parent_plan_status: {complete | parent-child open | 공란}
 ===END===
 ```
 

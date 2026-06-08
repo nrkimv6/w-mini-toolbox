@@ -52,29 +52,163 @@ plan 문서에서:
 
 ---
 
-## archive 이동 (`git mv` 분기)
+## baseline dirty 기록
 
-### orphan 도입 프로젝트 — plans 워크트리 내에서 git mv
+스킬 시작 직후 1회 실행:
+
+```powershell
+$BaseDirty = (git -C $RepoRoot status --short) | ForEach-Object { $_.Substring(3).Trim() }
+$PlansRoot = Join-Path $RepoRoot ".worktrees/plans"
+$PlansBaseDirty = (git -C $PlansRoot status --short) | ForEach-Object { $_.Substring(3).Trim() }
+$TouchedPaths = [System.Collections.Generic.HashSet[string]]::new()
+```
+
+docs commit root 기준 `TODO.md`는 wtools에서 `.worktrees/plans/TODO.md`, `docs/DONE.md`는 `.worktrees/plans/docs/DONE.md`다.
+
+### self residual dirty 계산 inline snippet
+
+```powershell
+$CurrentDirty = (git -C $RepoRoot status --short) | ForEach-Object { $_.Substring(3).Trim() }
+$SelfResidual = $CurrentDirty | Where-Object { $TouchedPaths.Contains($_) }
+
+# whitelist는 candidate classification 전용이다. stage pathspec에는 broad glob을 쓰지 않는다.
+$Whitelist = @("TODO.md", "docs/DONE.md")
+$InWhitelist  = $SelfResidual | Where-Object { $_ -in $Whitelist -or $_ -like "docs/plan/*.md" -or $_ -like "docs/archive/*.md" -or $_ -like "docs/history/*.md" }
+$OutWhitelist = $SelfResidual | Where-Object { $_ -notin $InWhitelist }
+
+# touched whitelist dirty는 exact path set만 stage하고, commit 실패 시 hard-fail한다.
+$Expected = [string[]]$InWhitelist
+foreach ($f in $Expected) { git -C $RepoRoot add -- $f }
+$Staged = git -C $RepoRoot diff --cached --name-only
+if (@(Compare-Object $Expected $Staged).Count -ne 0) {
+  throw "staged mismatch: expected exact path set과 cached set이 다릅니다."
+}
+if ($Expected) {
+  & commit.ps1 "docs: flush self residual dirty" -Files $Expected
+  if ($LASTEXITCODE -ne 0) { throw "touched whitelist dirty commit failed" }
+}
+
+if ($OutWhitelist) { Write-Host "남은 dirty: $($OutWhitelist -join ', ')" }
+```
+
+### related-plan dirty 분류 표
+
+| 분류 | 조건 | 자동 처리 |
+|------|------|----------|
+| `self` | `current dirty ∩ $TouchedPaths` | exact path set만 commit wrapper로 커밋 |
+| `related-plan` | 현재 plan 본문, Phase Z, 검증 로그, 직전 `/merge-test` 출력에 등장한 path가 현재 dirty | 관련성 evidence와 exact path set을 기록하고 커밋 |
+| `post-merge-owned` | 직전 `impl/post-merge-*` branch, repair commit, final merge commit evidence에 포함된 path가 현재 dirty | repair evidence를 남기고 커밋 |
+| `preexisting-unrelated` | baseline dirty였고 현재 plan/검증 evidence와 무관 | 커밋하지 않고 보존 evidence로 보고 |
+| `UNTRACKED_ORIGIN_BLOB_RESIDUE` | current HEAD deleted + upstream tracked + local hash equals upstream hash | archive move 전 hard blocker. `commit`, `quarantine`, `explicit preserve with owner plan` evidence 중 하나가 필요 |
+| `UNTRACKED_OVERWRITE_RISK` | current HEAD deleted + upstream tracked + local untracked path가 pull/merge overwrite 대상 | origin blob residue와 분리해 표에 남기고 owner/evidence를 확인 |
+| `protected-secret` | `.env*`, `credentials.json`, `*.key`, `*.pem`, `secrets/**` | 제품 커밋 금지, fail-fast 또는 별도 보존 보고 |
+| `unknown-protected` | protected path인데 owner/evidence 불명 | 보존 branch 또는 명시 보고. 성공 종료 시 dirty 0 또는 보존 evidence 필수 |
+
+`tests/*.py`, `app/*`, `frontend/*`, `scripts/*`는 whitelist에 추가하지 않는다. 이 경로들은 `related-plan dirty` 또는 `post-merge-owned dirty`로 분류될 때만 커밋 대상이 된다.
+
+**broad stage 금지 예시:**
+- 금지: `git add -u -- docs/plan`
+- 금지: `git add docs/plan/*.md`
+- 금지: `git add -A`
+- 허용: `$TouchedPaths`와 현재 dirty 교집합에서 계산한 exact path set만 `git add -- <path>` 또는 `commit.ps1 -Files <paths>`로 stage
+
+archive rename pair는 원본 삭제(`docs/plan/foo.md`)와 archive 추가(`docs/archive/foo.md`)를 expected staged set에 함께 넣는다. 기존 dirty plan은 자동 수리 대상이 아니라 baseline dirty로 보존한다.
+
+---
+
+## 세션 plan 목록 추출과 remaining targets 판정
+
+대화 텍스트에서 사용자가 명시한 절대경로/상대 plan 링크만 수집해 session targets를 만든다. sibling `_todo-*`는 대표 plan 본문 링크 또는 같은 stem의 미완료 파일을 확인한 뒤 추가한다.
+
+```powershell
+$Mentioned = Select-String -InputObject $ConversationText -Pattern '([A-Za-z]:\\[^\\r\\n`]*docs\\plan\\[^\\r\\n` ]+\\.md|docs/plan/[^\\r\\n` )]+\\.md)' -AllMatches |
+  ForEach-Object { $_.Matches.Value } |
+  Sort-Object -Unique
+
+$SessionTargets = $Mentioned | Where-Object {
+  Test-Path $_ -and -not (Select-String -Path $_ -Pattern '^> 상태:\\s*(완료|폐기)|docs[\\/]archive' -Quiet)
+}
+```
+
+- `remaining targets = session targets - 완료/폐기/archive`
+- global backlog scan은 session targets 산정 이후 참고용으로만 수행한다.
+- remaining targets가 0건이면 예시처럼 출력한다:
+
+```text
+남은 session target 없음.
+참고 backlog: .worktrees/plans/TODO.md에 남은 항목은 사용자가 명시할 때만 진행합니다.
+```
+
+global backlog를 보여줄 때는 반드시 `참고 backlog` label을 붙이고, 그 항목을 자동 실행 대상으로 승격하지 않는다.
+
+---
+
+## archive 이동 (helper SSOT)
+
+### 1순위: archive-plan.ps1 helper 호출
+
+`common\tools\archive-plan.ps1`이 archive mutation의 SSOT다. Claude는 먼저 helper를 호출하고 JSON을 read-back한다.
+
+```powershell
+$ArchiveResult = & "common\tools\archive-plan.ps1" `
+  -PlanFile "D:\work\project\service\wtools\.worktrees\plans\docs\plan\YYYY-MM-DD_{주제}_todo.md" `
+  -ArchiveFile "D:\work\project\service\wtools\.worktrees\plans\docs\archive\YYYY-MM-DD_{주제}_todo.md" `
+  -RepoRoot "D:\work\project\service\wtools\.worktrees\plans" `
+  -Json | ConvertFrom-Json
+
+if ($ArchiveResult.tool -ne "archive-plan") { throw "archive-plan JSON payload missing" }
+if (-not $ArchiveResult.archive_pair_ok -or $ArchiveResult.half_archived_state) {
+  throw "archive helper failed: $($ArchiveResult.error_code) $($ArchiveResult.reason)"
+}
+
+# 실제 이동 성공이면 expected_paths/staged_paths에 source deletion + archive add/rename pair가 있어야 한다.
+# reason=already_archived_resume이면 archive 이동은 반복하지 않고 잔여 TODO/DONE/read-back/commit 단계만 재개한다.
+$ArchiveResult.expected_paths
+$ArchiveResult.staged_paths
+```
+
+Success 판정:
+- `tool=archive-plan`
+- `status=success`
+- `archive_pair_ok=true`
+- `half_archived_state=false`
+- 실제 이동이면 `expected_paths`와 `staged_paths`가 active source와 archive destination pair를 포함한다
+- `reason=already_archived_resume`이면 idempotent no-op 성공이며 직접 `git mv`를 반복하지 않는다
+
+Failure 처리:
+- `half_archived_state=true`, `ARCHIVE_GIT_MV_FAILED`, `ARCHIVE_PAIR_MISSING`, `ARCHIVE_SOURCE_MISSING`, `ARCHIVE_PATH_OUT_OF_REPO`는 owner intervention 대상이다.
+- 실패 후 Claude가 직접 수정 재시도를 하지 않는다. 아래 read-only 진단만 수집해 보고한다.
+
+```powershell
+git status --short
+git diff --name-status --find-renames --cached
+git diff --name-status --find-renames
+```
+
+### helper 미설치 환경의 마지막 fallback — orphan 도입 프로젝트
+
+`common\tools\archive-plan.ps1`이 없는 downstream 환경에서만 사용한다. wtools에서는 이 fallback을 정상 경로로 사용하지 않는다.
 
 ```powershell
 Set-Location ".worktrees/plans"
 git mv -f "docs/plan/YYYY-MM-DD_{주제}_todo.md" "docs/archive/YYYY-MM-DD_{주제}_todo.md"
 # 원본 plan이 docs/plan/ 에 남아있으면 함께 이동 (이미 archive에 있으면 스킵)
 # git mv -f "docs/plan/YYYY-MM-DD_{주제}.md" "docs/archive/YYYY-MM-DD_{주제}.md"
-git add "docs/archive/YYYY-MM-DD_{주제}_todo.md"
+git diff --name-status --find-renames --cached
 # plans 워크트리에서는 Resolve-DocsCommitCandidates 반환 파일만 add한다.
 # git add -A는 사용하지 않는다.
-git commit -m "chore: archive {주제}"
+& "D:\work\project\tools\common\commit.ps1" -Message "chore: archive {주제}" -Files "docs/plan/YYYY-MM-DD_{주제}_todo.md,docs/archive/YYYY-MM-DD_{주제}_todo.md"
 # push는 literal 'origin plans' 대신 현재 docs commit root가 추적하는 upstream으로만 수행한다.
 git push
 Set-Location -  # 이전 경로로 복귀
 ```
 
-### orphan 미도입 프로젝트 — 기존 방식
+### helper 미설치 환경의 마지막 fallback — orphan 미도입 프로젝트
 
 ```powershell
 git mv -f "{plan루트}/YYYY-MM-DD_{주제}_todo.md" "{archive루트}/YYYY-MM-DD_{주제}_todo.md"
-git add "{archive루트}/YYYY-MM-DD_{주제}_todo.md"
+git diff --name-status --find-renames --cached
+& "D:\work\project\tools\common\commit.ps1" -Message "chore: archive {주제}" -Files "{plan루트}/YYYY-MM-DD_{주제}_todo.md,{archive루트}/YYYY-MM-DD_{주제}_todo.md"
 
 # FORBIDDEN: Move-Item / Remove-Item — 히스토리 유실
 # Move-Item -Path "{plan경로}" -Destination "{archive경로}"
@@ -128,11 +262,14 @@ CHANGELOG.md가 없으면 파일 자동 생성 후 추가.
 
 ---
 
-## plans dirty 사전 점검 경고 템플릿
+## main+plans dirty 사전 점검 경고 템플릿
 
 ```powershell
-⚠️ plans 워크트리에 미커밋 변경 N건. main cwd의 git status에서는 보이지 않습니다.
+⚠️ main/plans 워크트리에 미커밋 변경 N건. 화이트리스트 후보와 블랙리스트 후보를 먼저 분리하세요.
+화이트리스트: docs/plan/**, docs/archive/**, docs/history/**, TODO.md, docs/DONE.md, tests/**/fixtures/**
+블랙리스트: .env*, credentials.json, *.key, *.pem, secrets/**
 현재 실행이 수정한 파일만 add하세요. 기존 잔존 dirty와 묶어서 커밋하지 마세요.
+git -C "$RepoRoot" status --porcelain
 Set-Location "$RepoRoot\.worktrees\plans"
 git status --porcelain
 git add <파일명>   # 이번 실행이 수정한 파일만 개별 add

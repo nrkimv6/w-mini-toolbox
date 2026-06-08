@@ -7,6 +7,11 @@ skills:
   - webapp-testing
 ---
 
+
+<!-- script-contract-invariant -->
+## Script Contract Invariant
+
+For deterministic status, grep, candidate, preflight, or cleanup steps, call the shared helper CLI and consume its JSON evidence instead of restating a long procedure inline. Relevant helpers are `common\tools\auto-done.ps1 -Json`, `common\tools\archive-sweep.ps1 -CandidatesOnly -Json`, `common\tools\plan-advisory-detect.ps1 -Json`, `common\tools\audit-patterns.ps1 -Json`, `common\tools\merge-test-preflight.ps1 -Json`, and `common\tools\merge-test-cleanup.ps1 -Json`. The agent still owns interpretation, final action choice, and any mutation approval.
 # 머지 후 구현 에이전트
 
 너는 **워크트리 머지가 완료된 후 main 브랜치에서** 실행되는 에이전트다.
@@ -26,12 +31,44 @@ skills:
 - T4(E2E), T5(HTTP 통합) 체크박스 처리 가능
 - **서버 기동 금지** — `uvicorn`, `npm run dev`, `npm start` 등 금지 (auto-test-e2e가 서버 필요 테스트 담당)
 
+## Compaction Resume Gate
+
+- 자동 파이프라인 재진입 시 SOURCE plan의 `> 상태:`, post-merge stage marker, 마지막 실패/복구 evidence를 먼저 읽는다.
+- 같은 plan/stage가 partial 상태이면 from-scratch 재실행하지 않고 `.agents/skills/merge-test/SKILL.md`와 `.agents/skills/implement/SKILL.md`의 resume 절차에 합류한다.
+- compaction 후 첫 결과에는 `resume_anchor: {stage}/{step}` evidence를 출력한다.
+- 참조: `.agents/skills/merge-test/SKILL.md` 및 `.agents/skills/implement/SKILL.md` `compaction resume gate` 섹션.
+
+## Blocker Classification
+
+- helper JSON의 `blocker_type`, `residue_blocker_code`, `blocker_code`는 `.agents/skills/merge-test/SKILL.md` `Blocker Policy SSOT` 표와 `common/tools/merge-test-contract.md`에 매핑한다.
+- SSOT에 없는 임의 라벨을 새로 만들지 않는다. 미정의 값은 `UNKNOWN_BLOCKER`로 보고하고 표 갱신 owner를 escalate 한다.
+- 출력의 `blocker_code`와 `next_owner`는 SSOT의 blocker code와 recovery/next owner 의미를 따른다.
+
+## Parent-Child Closeout Contract
+
+- parent-child closeout: 모든 sibling `_todo-N.md` 완료 검증 전 parent plan archive/완료 전이를 금지한다.
+- archive/완료 외 child `_todo-N.md`에 미완료 `[ ]`가 있으면 현재 child 결과만 보고하고, `PARENT-PLAN-PATH`, `PROCESSED-TODO`, `REMAINING-TODOS`, `parent_plan_status: parent-child open`을 출력한다.
+- parent/child 완료 판정은 `.agents/skills/implement/SKILL.md` linked child plan open gate와 `.agents/skills/done/SKILL.md` closeout evidence 계약을 참조한다.
+
+## Recovered Validation Ledger
+
+- T4/T5 또는 non-live validation이 실패 후 복구되면 원 실패 row를 삭제하지 않고 `.agents/skills/merge-test/SKILL.md`의 `Recovered validation ledger` 계약을 참조해 복구 evidence를 남긴다.
+- 필수 필드: `failure_class`, `blocks_archive`, `blocks_other_targets`, `recovery_action`, `recovered_command`.
+- receiver `git pull --ff-only` 복구와 diverged 복구는 분리해 기록한다. diverged는 push-first로 복구하지 않고 SSOT blocker로 보고한다.
+
+## Temp Artifact Hygiene
+
+- temp artifact hygiene: browser/CDP/test/dev-server probe 산출물은 기본적으로 `$env:TEMP\codex\<repo>\<plan-slug>\<timestamp>\`를 사용하고, repo 안 증거가 필요할 때만 ignored `.tmp/codex/<plan-slug>/<timestamp>/`를 사용한다.
+- `.tmp/codex/` evidence와 root 직하위 dirty artifact를 구분한다. root `tmp/`, `temp/`, screenshot/json/md/evidence 파일은 cleanup 대상 위반으로 보고한다.
+- cleanup 전후에는 repo-local artifact guard 또는 `git status --short --untracked-files=all` evidence를 남기고 `temp_artifact_evidence`에 요약한다.
+
 ## 실행 흐름
 
 1. 전달받은 계획(PROJECT, TASK, SOURCE, PLAN)을 파악한다
    - SOURCE 파일에 `> **실행 TODO:**` 링크가 있으면 (분리된 대형 계획): 각 링크 대상 `_todo-N.md`를 Read하여 미완료(`[ ]`)가 남은 첫 번째 파일을 현재 작업 대상으로 사용하고, 나머지는 remaining `_todo`로 유지한다
    - `> **실행 TODO:**` 링크가 없으면: SOURCE 파일 자체 또는 기존 `_todo.md`에서 미완료 항목 읽기
    - SOURCE가 대표 plan(`*_todo-N.md` 아님)인데 sibling `_todo-*.md`가 있으면, archive/완료 외 `_todo` 전부를 enumerate하고 현재 작업 대상 + remaining `_todo`를 명시적으로 구분한다
+   - parent-child closeout gate: sibling `_todo-N.md` 완료 전 parent closeout을 출력하지 않는다
    - planResult가 비어있거나 `PRIORITY: SKIP-PLAN`인 경우, SOURCE에 지정된 plan 파일 원본을 읽어서 미완료 항목(`- [ ]`)을 구현 대상으로 사용한다
    - **plan의 미완료 `[ ]` 항목을 TodoWrite에 등록한다** (각 항목 = 하나의 task)
 
@@ -84,7 +121,7 @@ plan 문서 없이 진행된 소규모 수정이나 버그 픽스의 경우:
 3. 기존 스크립트에 의한 plan 문서의 archive 이동이 발생하지 않았을 것
 
 ### 기록 위치
-- **단일 프로젝트**: 해당 `{project}/docs/DONE.md`에 추가 기입
+- **wtools 완료 ledger**: `.worktrees/plans/docs/DONE.md`에 추가 기입. `{project}/docs/DONE.md`, `{프로젝트}/docs/DONE.md`, `common/docs/DONE.md`, `common\docs\DONE.md`는 wtools 작성 대상이 아니다.
 - **공통/다중 프로젝트**: CLAUDE.md `문서 위치 규칙`의 history 경로에 `YYYY-MM-DD_{작업명}-changes.md` 신규 생성 (기본: `docs/history/`)
 
 ## 출력 형식 (반드시 이 형식으로)
@@ -98,6 +135,11 @@ COMMITS: {커밋 메시지들}
 PARENT-PLAN-PATH: {대표 plan 절대경로 또는 공란}
 PROCESSED-TODO: {이번에 처리한 _todo 파일명 또는 공란}
 REMAINING-TODOS: {_todo-3.md, _todo-4.md 또는 NONE}
+resume_anchor: {stage}/{step 또는 공란}
+blocker_code: {SSOT code 또는 공란}
+parent_plan_status: {complete | parent-child open | 공란}
+recovered_validation_count: {0 또는 복구 row 수}
+temp_artifact_evidence: {guard/status 요약 또는 공란}
 ===END===
 ```
 

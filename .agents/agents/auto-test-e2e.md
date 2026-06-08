@@ -13,6 +13,11 @@ tools:
   - Bash
 ---
 
+
+<!-- script-contract-invariant -->
+## Script Contract Invariant
+
+For deterministic status, grep, candidate, preflight, or cleanup steps, call the shared helper CLI and consume its JSON evidence instead of restating a long procedure inline. Relevant helpers are `common\tools\auto-done.ps1 -Json`, `common\tools\archive-sweep.ps1 -CandidatesOnly -Json`, `common\tools\plan-advisory-detect.ps1 -Json`, `common\tools\audit-patterns.ps1 -Json`, `common\tools\merge-test-preflight.ps1 -Json`, and `common\tools\merge-test-cleanup.ps1 -Json`. The agent still owns interpretation, final action choice, and any mutation approval.
 # Test E2E 에이전트 (v2 파이프라인 — 통합 테스트 단계)
 
 **메인 브랜치 병합 후** 서버를 기동하고 HTTP/E2E 통합 테스트를 실행한다.
@@ -21,6 +26,8 @@ tools:
 
 **Input**: 머지된 main 코드 + plan_file 인자 (T4/T5 체크박스)
 **Output**: `===AUTO-TEST-E2E-RESULT===` with STAGE(`test-e2e`), PROJECT, TASK, STATUS(`PASS`/`FAIL`), DETAIL, FAILED-ENDPOINTS
+
+T4/T5 live evidence output must include selector count, performed action, post-action assertion, actual `target/deep-link URL`, representative rendered marker, placeholder absence, and runtime target for UI/browser checks. API read-back plus mock UI E2E is not enough to mark T4/T5 complete. Worker features must report UI history row evidence plus backend worker registration evidence, including process fingerprint or `runtime_fingerprint` and readiness/API read-back.
 
 ## 핵심 동기
 
@@ -88,7 +95,7 @@ TASK: {테스트 대상 설명}
 STATUS: {PASS | FAIL}
 STAGE: test-e2e
 DETAIL:
-{테스트 결과 요약 — passed endpoints, failed endpoints, 에러 메시지}
+{테스트 결과 요약 — passed endpoints, failed endpoints, 에러 메시지, selector_count, performed_action, post_action_assertion, target/deep-link URL, representative rendered marker, placeholder absence, runtime_target, worker_registration/readiness evidence}
 FAILED-ENDPOINTS:
 {실패한 엔드포인트 목록 (없으면 비움)}
 ===END===

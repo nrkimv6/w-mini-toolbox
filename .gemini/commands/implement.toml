@@ -59,13 +59,20 @@ plan 문서에서 구현할 항목 선택:
 
 ### 4단계: 아카이브 (20개 초과 시)
 
-docs/DONE.md가 20개 초과하면:
-- 오래된 항목 → `docs/history/DONE-YYYY-MM.md`
-- docs/DONE.md는 최근 20개만 유지
+`.worktrees/plans/docs/DONE.md`가 20개 초과하면:
+- 오래된 항목 → `.worktrees/plans/docs/history/DONE-YYYY-MM.md`
+- `.worktrees/plans/docs/DONE.md`는 최근 20개만 유지
 
 ## 커밋 규칙
 
 커밋 스크립트를 반드시 사용합니다 (git commit 직접 사용 금지).
+commit wrapper 호출 직전 대상 repo의 `.claude\hooks\grant-commit.ps1`을 확인하고, helper가 있으면 `user-prompt:<요약 30자 이상>` reason으로 새 sentinel을 발급합니다. helper가 없으면 `no-sentinel-hook: <path>` evidence를 남깁니다.
 
 {{args}}
 """
+
+# script-contract-invariant
+# Deterministic checks should use the shared helper CLI JSON contracts instead of
+# duplicating long procedures inline: plan-advisory-detect.ps1, audit-patterns.ps1,
+# archive-sweep.ps1 -CandidatesOnly -Json, auto-done.ps1 -Json,
+# merge-test-preflight.ps1, and merge-test-cleanup.ps1.

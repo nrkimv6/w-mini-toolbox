@@ -41,6 +41,20 @@ git stash apply {hash}
 
 ## 0단계 루트 브랜치 자동 전환 의사코드
 
+## T4/T5 live evidence row examples
+
+UI T4 evidence must preserve a selector/action/assertion chain:
+
+```powershell
+| T4 | python -m pytest tests/ui/test_history_e2e.py -m "e2e and http_live" -v | D:\work\project\tools\monitor-page | 완료 | 0 | selector_count=3; performed_action=click refresh; post_action_assertion=history row visible; runtime_target=http://localhost:5173/history | - |
+```
+
+Worker/scheduler T5 evidence must preserve runtime read-back:
+
+```powershell
+| T5-http_live | python -m pytest tests/dev_runner/test_worker_http_live.py -m http_live -v | D:\work\project\tools\monitor-page | 완료 | 0 | runtime_fingerprint=pid:1234; worker_registration=listener registered; readiness=200; API read-back=history row persisted | - |
+```
+
 
 원본 프로젝트 루트에서 `git rev-parse --abbrev-ref HEAD`를 실행한다.
 
@@ -178,6 +192,39 @@ if ($stashRef) {
   Write-Host "[merge-test] stash selective restore/drop 완료: $stashRef"
 }
 ```
+
+## 2.5단계 post-merge protected dirty repair
+
+post-merge 보강 작업이 필요하면 main root에 먼저 쓰지 않고 `impl/post-merge-{slug}` worktree/branch로 선제 라우팅한다. 사후에 main root dirty가 발견되면 아래 repair flow를 자동 수행한다.
+
+```powershell
+$PostMergeBaseline = git status --short
+
+# post-merge 검증/보강 후
+$CurrentDirty = git status --short
+$NewDirty = Compare-Object $PostMergeBaseline $CurrentDirty -PassThru | Where-Object {
+  $_ -match '^\s*(M|A|D|\?\?)\s+(app/|frontend/|scripts/|tests/|\.agents/|\.claude/)'
+}
+
+if ($NewDirty) {
+  Write-Host "ROOT_PROTECTED_DIRTY_CREATED: post-merge protected dirty detected; starting repair flow."
+  $repairBranch = "impl/post-merge-$slug"
+  $repairWorktree = ".worktrees/$repairBranch"
+  git worktree add $repairWorktree -b $repairBranch
+  # $NewDirty의 path만 repair worktree로 이동/적용한다. 기존 unrelated dirty는 건드리지 않는다.
+  # repair worktree에서 exact path set만 commit wrapper로 커밋한다.
+  # main으로 repair branch를 merge한 뒤 Phase Z evidence에 아래 3개를 기록한다.
+  # - post-merge repair branch
+  # - repair commit
+  # - final merge commit
+}
+```
+
+- `ROOT_PROTECTED_DIRTY_CREATED`는 실패 final이 아니라 repair trigger다.
+- 이 repair flow는 post-merge 중 생긴 dirty의 사후 처리 규칙이며, child repo `.agents`/`.claude`/`.gemini` mirror 파일을 root에서 직접 edit/commit하는 예외가 아니다.
+- downstream mirror 반영은 wtools 원본 변경 후 sync commit, remote fast-forward 수신, 또는 downstream read-back evidence로만 검증한다.
+- repair branch 생성 실패 시 dirty path를 보존 branch 또는 dirty 보고 최종 evidence로 남기고, `/done`이 `related-plan dirty`로 이어받을 수 있게 Phase Z에 기록한다.
+- `main에 먼저 dirty 작성 -> 나중에 impl/post-merge branch 사후 생성` 순서가 감지되면 같은 repair acceptance case로 처리한다.
 
 
 ## 4단계 API readiness / live readiness 폴링

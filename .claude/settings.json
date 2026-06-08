@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "powershell.exe -NoProfile -Command \"$input = [Console]::In.ReadToEnd(); if ($input -match '\\bgit\\s+commit\\b') { Write-Host '\\n[BLOCKED] git commit 직접 사용 금지!\\n  -> \\\"D:\\work\\project\\tools\\common\\commit.sh\\\" \\\"message\\\"\\n  -> 또는 /commit 스킬 사용\\n' -ForegroundColor Red; exit 1 }\""
+            "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \".claude\\hooks\\check-commit-approval.ps1\""
           }
         ]
       },
@@ -22,6 +22,16 @@
       }
     ],
     "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"common\\tools\\hooks\\plan-write-postcommit.ps1\" -Surface claude",
+            "timeout": 30
+          }
+        ]
+      },
       {
         "matcher": "Edit|Write",
         "hooks": [

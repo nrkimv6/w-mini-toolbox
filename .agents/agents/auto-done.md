@@ -5,6 +5,11 @@ model: haiku
 tools: [Read, Edit, Bash, Glob, Grep]
 ---
 
+
+<!-- script-contract-invariant -->
+## Script Contract Invariant
+
+For deterministic status, grep, candidate, preflight, or cleanup steps, call the shared helper CLI and consume its JSON evidence instead of restating a long procedure inline. Relevant helpers are `common\tools\auto-done.ps1 -Json`, `common\tools\archive-sweep.ps1 -CandidatesOnly -Json`, `common\tools\plan-advisory-detect.ps1 -Json`, `common\tools\audit-patterns.ps1 -Json`, `common\tools\merge-test-preflight.ps1 -Json`, and `common\tools\merge-test-cleanup.ps1 -Json`. For `auto-done.ps1 -Json`, blocked results are machine-readable contract JSON payloads on stdout; parse the `tool=auto-done` object and do not require trailing human `Write-Error` text. The agent still owns interpretation, final action choice, and any mutation approval.
 # auto-done
 
 ## I/O Contract
@@ -21,6 +26,12 @@ tools: [Read, Edit, Bash, Glob, Grep]
 > **스킬 경로 참조**: 프롬프트에 `스킬 파일:` 줄이 있으면 해당 파일을 우선 참조하여 done 절차를 수행한다.
 > 기본 참조 경로: `D:\work\project\tools\monitor-page\.agents\skills\done\SKILL.md`
 
+## Helper JSON Resume/Evidence Contract
+
+- T4/T5 inline code evidence table 셀은 helper가 보존해야 한다. `command`, `cwd`, `blocker_code` 값이 backtick으로 감싸져 있어도 사람이 먼저 parser-safe rewrite를 수행하지 않는다.
+- `common\tools\auto-done.ps1 -Json` 또는 Python helper가 `already_archived_resume=true`를 반환하면 archive 이동을 반복하지 않는다.
+- already-archived resume에서는 JSON의 `searched_paths`와 `resumed_steps`를 read-back하고, archive 이동 이후 TODO/DONE/read-back/commit 잔여 단계만 계속한다.
+
 ## 입력 규약
 
 프롬프트 첫 줄에 (선택적으로 스킬 파일 경로 참조가 있고) plan 파일 절대경로가 전달된다:
@@ -35,6 +46,12 @@ tools: [Read, Edit, Bash, Glob, Grep]
 - 같은 디렉토리에 `YYYY-MM-DD_{주제}.md` (대표 문서 또는 원본 plan)이 있으면 함께 archive
 - plans 워크트리를 쓰는 파이프라인이라면 archive 후 commit은 `Resolve-DocsCommitCandidates` 반환 파일만 대상으로 하고, 전체 clean 여부로 gate하지 않는다.
 - unrelated dirty가 남아 있으면 경고만 출력하고 current-run 후보만 커밋한다.
+
+## Parent-Child Closeout Contract
+
+- parent-child closeout: Step 1의 구현완료 설정과 Step 2의 archive 전에 대표 plan의 `> **실행 TODO:**` 링크 및 sibling `_todo-*.md`를 전수 확인한다.
+- archive/완료 외 child `_todo-N.md`에 미완료 `[ ]`가 남아 있으면 parent archive를 차단하고, 현재 primary `_todo-N.md` 처리 결과와 remaining targets만 출력한다.
+- 이 계약은 `.agents/skills/done/SKILL.md` closeout evidence 및 `.agents/skills/implement/SKILL.md` linked child plan open gate를 참조한다. SSOT 표를 agent 본문에 복제하지 않는다.
 
 ## 전제조건 (생략)
 
@@ -79,6 +96,7 @@ done SKILL.md 2단계~8단계를 순서대로 실행:
 - `_todo.md` 내 `[ ]` → `[x]` 전환 (미완료 항목 있으면 경고 후 계속)
 - 헤더 `> 상태:` → `구현완료`, `> 진행률:` → `N/N (100%)`
 - 푸터 `*상태: ... | 진행률: ...*` 동기화
+- parent-child closeout gate가 open이면 parent plan은 `구현완료`/archive로 전이하지 않고 `remaining targets` evidence를 남긴다
 
 ### 2. plan 문서 아카이브
 
@@ -93,16 +111,17 @@ done SKILL.md 2단계~8단계를 순서대로 실행:
 
 ### 3. TODO → DONE 이동
 
+- **wtools canonical DONE ledger**: 완료 기록은 `.worktrees/plans/docs/DONE.md`에만 쓴다. root/common의 `common/docs/DONE.md`, `common\docs\DONE.md`, `{project}/docs/DONE.md`, `{프로젝트}/docs/DONE.md`는 wtools 완료 ledger가 아니며 작성 대상으로 삼지 않는다.
 - 각 `_todo-N.md`의 `> 대상 프로젝트:` 헤더를 읽어 **프로젝트별** 처리:
   - 해당 프로젝트의 `TODO.md` 열기
   - plan과 연관된 항목을 `In Progress`/`Pending`에서 제거
-  - 해당 프로젝트의 `docs/DONE.md` 상단에 `- [x] {오늘날짜}: {제목}` 추가
-- `> 대상 프로젝트:` 필드가 없는 레거시 파일: 기존 방식(단일 프로젝트) 유지
+  - `.worktrees/plans/docs/DONE.md` 상단에 `- [x] {오늘날짜}: {제목}` 추가
+- `> 대상 프로젝트:` 필드가 없는 레거시 파일도 wtools에서는 `.worktrees/plans/docs/DONE.md`에 기록한다.
 
 ### 4. DONE.md 아카이브 (10개 초과 시)
 
-- `.worktrees/plans/`가 있으면 오래된 항목 → `.worktrees/plans/docs/archive/DONE-YYYY-MM.md`로 이동
-- `.worktrees/plans/`가 없으면 오래된 항목 → `docs/archive/DONE-YYYY-MM.md`로 이동
+- `.worktrees/plans/docs/DONE.md`의 오래된 항목 → `.worktrees/plans/docs/archive/DONE-YYYY-MM.md`로 이동
+- `.worktrees/plans/`가 없는 non-wtools legacy 프로젝트에서만 기존 `docs/DONE.md` → `docs/archive/DONE-YYYY-MM.md` 규칙을 적용한다.
 
 ### 5. wtools/TODO.md 동기화
 
@@ -134,6 +153,8 @@ auto-done 완료: {plan 제목}
 - archive: {archive 경로}
 - todo_archive: {_todo archive 경로}
 - commit: {커밋 해시 또는 "완료"}
+- 사용자 escalation 처리: {무엇을 다시 확인했고 무엇을 고쳤는지 또는 해당 없음}
+- remaining targets: {없음 또는 남은 TODO/owner}
 ```
 
 실패 시:
@@ -141,6 +162,13 @@ auto-done 완료: {plan 제목}
 ```
 auto-done 실패: {plan 제목}
 ERROR: {오류 메시지}
+- 사용자 escalation 처리: {재지시/질책이 있었다면 다시 확인한 범위와 blocked owner}
 ```
+
+## 사용자 escalation closeout gate
+
+- 같은 세션에 사용자 재지시/질책/강한 불만 신호가 있었으면 최종 출력에서 active plan/archive/DONE/root/head/service 상태와 `사용자 escalation 처리`를 분리해 보고한다.
+- `사용자 escalation 처리`에는 무엇을 다시 확인했고 무엇을 고쳤는지, 남은 `remaining targets` 또는 blocked owner를 포함한다.
+- escalation evidence는 안전 훈계가 아니라 작업 품질 누락 신호다. 표현 평가 대신 plan/TODO/status/read-back 근거를 남긴다.
 
 
