@@ -1,8 +1,0 @@
-{
-	"files.exclude": {
-		".claude": true
-	},
-	"search.exclude": {
-		".claude": true
-	}
-}

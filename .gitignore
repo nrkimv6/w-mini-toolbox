@@ -26,8 +26,7 @@ ios/*.xcworkspace
 
 # IDE
 .idea/
-.vscode/*
-!.vscode/settings.json
+.vscode/
 *.swp
 *.swo
 
@@ -45,3 +44,15 @@ coverage/
 .wrangler
 # Local worktrees
 .worktrees/
+
+# internal tool files (local-only)
+.agent/
+.agents/
+.claude/
+.gemini/
+AGENTS.md
+CLAUDE.md
+GEMINI.md
+MANUAL_TASKS.md
+docs/MANUAL_TASKS.md
+docs/rule_navercafe.md
