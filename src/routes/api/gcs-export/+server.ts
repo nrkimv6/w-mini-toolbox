@@ -9,12 +9,14 @@ const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
 // ------------------------------------------------------------------
 
 /**
- * Base64url-encode an ArrayBuffer.
+ * Base64url-encode an ArrayBuffer or typed-array view.
  */
-function base64urlEncode(buf: ArrayBuffer): string {
-	const bytes = new Uint8Array(buf);
+function base64urlEncode(buf: BufferSource): string {
+	const bytes: Uint8Array = ArrayBuffer.isView(buf)
+		? new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength)
+		: new Uint8Array(buf);
 	let str = '';
-	for (const b of bytes) str += String.fromCharCode(b);
+	for (let i = 0; i < bytes.length; i++) str += String.fromCharCode(bytes[i]);
 	return btoa(str).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 

@@ -5,7 +5,7 @@
 	import { applyOutputRule } from '$lib/tools/html-to-md/converter/outputProcessor.js';
 	import { requestAssist } from '$lib/tools/html-to-md/converter/assistClient.js';
 	import type { AssistState } from '$lib/tools/html-to-md/converter/assistClient.js';
-	import { PUBLIC_ENABLE_GEMINI_ASSIST } from '$env/static/public';
+	import { env } from '$env/dynamic/public';
 	import OutputRuleSelector, { type OutputRule } from './OutputRuleSelector.svelte';
 	import { Clipboard, Download, Sparkles, RotateCcw } from 'lucide-svelte';
 	import { marked } from 'marked';
@@ -22,7 +22,7 @@
 	let downloadButtonText = "다운로드";
 
 	// AI Assist 상태
-	const geminiEnabled = PUBLIC_ENABLE_GEMINI_ASSIST === 'true';
+	const geminiEnabled = env.PUBLIC_ENABLE_GEMINI_ASSIST === 'true';
 	let assistState: AssistState = { status: 'idle', errorMessage: null };
 	/** assist 전 원본 deterministic 결과 (복원용) */
 	let originalMarkdown = '';
