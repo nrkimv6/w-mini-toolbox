@@ -9,6 +9,10 @@ PUBLIC_SUPABASE_URL = "https://qxiuqztinabmdhclxsuz.supabase.co"
 PUBLIC_SUPABASE_ANON_KEY = "sb_publishable_ujqoBN-UBndhHh8aUA5Tog_gZOYPTEA"
 PUBLIC_AUTH_WORKER_URL = "https://auth.woory.day"
 PUBLIC_APP_ID = "mini-toolbox"
+# Gemini Assist: 클라이언트 번들 버튼 렌더 여부 (운영 활성화 시 'true'로 변경)
+# API key는 코드에 절대 하드코딩 금지 — 반드시 wrangler secret put GEMINI_API_KEY
+PUBLIC_ENABLE_GEMINI_ASSIST = "false"
+ENABLE_GEMINI_ASSIST = "false"
 
 [assets]
 directory = ".svelte-kit/cloudflare"

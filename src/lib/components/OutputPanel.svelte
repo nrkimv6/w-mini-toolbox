@@ -3,8 +3,11 @@
 	import { copyToClipboard, downloadAsFile, generateFilename } from '$lib/tools/html-to-md/converter/converter.js';
 	import { autoClearAfterCopy, autoClearAfterDownload, showAutoClearNotification } from '$lib/tools/html-to-md/utils/autoClear.js';
 	import { applyOutputRule } from '$lib/tools/html-to-md/converter/outputProcessor.js';
+	import { requestAssist } from '$lib/tools/html-to-md/converter/assistClient.js';
+	import type { AssistState } from '$lib/tools/html-to-md/converter/assistClient.js';
+	import { PUBLIC_ENABLE_GEMINI_ASSIST } from '$env/static/public';
 	import OutputRuleSelector, { type OutputRule } from './OutputRuleSelector.svelte';
-	import { Clipboard, Download, FileText } from 'lucide-svelte';
+	import { Clipboard, Download, Sparkles, RotateCcw } from 'lucide-svelte';
 	import { marked } from 'marked';
 
 	let selectedOutputRule: OutputRule = 'raw';
@@ -17,6 +20,49 @@
 
 	let copyButtonText = "복사";
 	let downloadButtonText = "다운로드";
+
+	// AI Assist 상태
+	const geminiEnabled = PUBLIC_ENABLE_GEMINI_ASSIST === 'true';
+	let assistState: AssistState = { status: 'idle', errorMessage: null };
+	/** assist 전 원본 deterministic 결과 (복원용) */
+	let originalMarkdown = '';
+	/** assist 결과로 덮어쓴 상태인지 여부 */
+	let isAssistActive = false;
+
+	// 입력 변경 시 assist 상태 초기화
+	$: if ($outputMarkdown !== undefined) {
+		// 새 변환이 들어오면 assist 상태 초기화
+		if (isAssistActive) {
+			isAssistActive = false;
+			assistState = { status: 'idle', errorMessage: null };
+		}
+	}
+
+	async function handleAssist() {
+		if (!processedMarkdown.trim() || assistState.status === 'loading') return;
+
+		// 원본 결과 보존
+		originalMarkdown = processedMarkdown;
+
+		const result = await requestAssist(processedMarkdown, (state) => {
+			assistState = state;
+		});
+
+		if (!result.isFallback) {
+			// assist 결과를 outputMarkdown store에 반영 (표시용)
+			outputMarkdown.set(result.text);
+			isAssistActive = true;
+		}
+	}
+
+	function handleRestoreOriginal() {
+		if (originalMarkdown) {
+			outputMarkdown.set(originalMarkdown);
+			isAssistActive = false;
+			assistState = { status: 'idle', errorMessage: null };
+			originalMarkdown = '';
+		}
+	}
 
 	async function handleCopy() {
 		const success = await copyToClipboard(processedMarkdown);
@@ -97,6 +143,32 @@
 			placeholder="변환된 마크다운이 여기에 표시됩니다..."
 			class:has-content={processedMarkdown.trim().length > 0}
 		></textarea>
+	{/if}
+
+	<!-- AI Assist 영역 (opt-in, ENABLE_GEMINI_ASSIST=true 시에만 렌더) -->
+	{#if geminiEnabled && processedMarkdown.trim()}
+		<div class="assist-bar">
+			{#if isAssistActive}
+				<button class="restore-btn" onclick={handleRestoreOriginal}>
+					<RotateCcw size={14} />
+					원래대로
+				</button>
+				<span class="assist-badge">AI 다듬기 적용됨</span>
+			{:else}
+				<button
+					class="assist-btn"
+					class:loading={assistState.status === 'loading'}
+					disabled={assistState.status === 'loading'}
+					onclick={handleAssist}
+				>
+					<Sparkles size={14} />
+					{assistState.status === 'loading' ? 'AI 처리 중...' : 'AI 다듬기'}
+				</button>
+			{/if}
+			{#if assistState.status === 'error' && assistState.errorMessage}
+				<span class="assist-error">{assistState.errorMessage}</span>
+			{/if}
+		</div>
 	{/if}
 </div>
 
@@ -395,6 +467,82 @@
 			transform: translateX(0) scale(1); 
 			opacity: 1; 
 		}
+	}
+
+	/* AI Assist 영역 */
+	.assist-bar {
+		display: flex;
+		align-items: center;
+		gap: 0.625rem;
+		padding: 0.625rem 1.25rem;
+		border-top: 1px solid hsl(280 60% 70% / 0.15);
+		background: hsl(280 60% 70% / 0.04);
+		flex-wrap: wrap;
+	}
+
+	.assist-btn {
+		display: flex;
+		align-items: center;
+		gap: 0.375rem;
+		padding: 0.375rem 0.875rem;
+		background: hsl(280 60% 70% / 0.12);
+		border: 1px solid hsl(280 60% 70% / 0.3);
+		border-radius: 1rem;
+		color: hsl(280 60% 40%);
+		font-size: 0.8rem;
+		font-weight: 500;
+		cursor: pointer;
+		transition: all 0.2s ease;
+		white-space: nowrap;
+	}
+
+	.assist-btn:hover:not(:disabled) {
+		background: hsl(280 60% 70% / 0.2);
+		border-color: hsl(280 60% 60%);
+		transform: translateY(-1px);
+	}
+
+	.assist-btn.loading,
+	.assist-btn:disabled {
+		opacity: 0.6;
+		cursor: not-allowed;
+		transform: none;
+	}
+
+	.restore-btn {
+		display: flex;
+		align-items: center;
+		gap: 0.375rem;
+		padding: 0.375rem 0.875rem;
+		background: hsl(0 0% 100%);
+		border: 1px solid hsl(280 60% 70% / 0.3);
+		border-radius: 1rem;
+		color: hsl(260 15% 45%);
+		font-size: 0.8rem;
+		font-weight: 500;
+		cursor: pointer;
+		transition: all 0.2s ease;
+	}
+
+	.restore-btn:hover {
+		background: hsl(280 60% 70% / 0.08);
+		border-color: hsl(280 60% 60%);
+	}
+
+	.assist-badge {
+		font-size: 0.75rem;
+		color: hsl(280 60% 50%);
+		font-weight: 500;
+		padding: 0.25rem 0.625rem;
+		background: hsl(280 60% 70% / 0.1);
+		border-radius: 0.75rem;
+		border: 1px solid hsl(280 60% 70% / 0.2);
+	}
+
+	.assist-error {
+		font-size: 0.75rem;
+		color: hsl(0 70% 50%);
+		flex: 1;
 	}
 
 	/* Mobile responsiveness */

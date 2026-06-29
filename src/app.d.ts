@@ -6,7 +6,17 @@ declare global {
 		// interface Locals {}
 		// interface PageData {}
 		// interface PageState {}
-		// interface Platform {}
+		interface Platform {
+			env: {
+				ASSETS: Fetcher;
+				/** Gemini Assist feature flag (wrangler vars 또는 secret) */
+				ENABLE_GEMINI_ASSIST?: string;
+				/** Gemini Developer API key (wrangler secret put GEMINI_API_KEY) */
+				GEMINI_API_KEY?: string;
+			};
+			context: ExecutionContext;
+			caches: CacheStorage & { default: Cache };
+		}
 	}
 }
 
