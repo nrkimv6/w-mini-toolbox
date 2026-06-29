@@ -1,13 +1,19 @@
 <script lang="ts">
-	import { History, Trash2, Download, X } from 'lucide-svelte';
+	import { History, Trash2, Download, X, Cloud } from 'lucide-svelte';
 	import { imageHistory, type SavedImage } from '$lib/tools/screenshot/stores/imageHistory';
 	import { onMount } from 'svelte';
 	import { i18n } from '$lib/tools/screenshot/i18n';
 	import ConfirmDialog from './ConfirmDialog.svelte';
+	import { env } from '$env/dynamic/public';
+	import { toast } from '$lib/tools/screenshot/stores/toast';
 
 	let history = $state<SavedImage[]>([]);
 	let expanded = $state(false);
 	let showClearDialog = $state(false);
+	let exportingId = $state<string | null>(null);
+	let exportedUrls = $state<Record<string, string>>({});
+
+	const gcsEnabled = env.PUBLIC_ENABLE_GCS_EXPORT === 'true';
 
 	onMount(() => {
 		history = imageHistory.getHistory();
@@ -20,6 +26,28 @@
 	function deleteImage(id: string) {
 		imageHistory.deleteImage(id);
 		refreshHistory();
+	}
+
+	async function handleCloudExport(item: SavedImage) {
+		if (!confirm('이 이미지를 Cloud Storage에 업로드하시겠습니까?')) return;
+
+		exportingId = item.id;
+		try {
+			const url = await imageHistory.exportToGCS(item.thumbnail, item.fileName);
+			if (url) {
+				exportedUrls = { ...exportedUrls, [item.id]: url };
+			} else {
+				toast.error('Cloud Export에 실패했습니다.');
+			}
+		} finally {
+			exportingId = null;
+		}
+	}
+
+	function copyUrl(url: string) {
+		navigator.clipboard.writeText(url).then(() => {
+			toast.success('URL이 클립보드에 복사되었습니다.');
+		});
 	}
 
 	function clearAll() {
@@ -117,6 +145,16 @@
 								>
 									<Download class="w-4 h-4 text-white" />
 								</a>
+								{#if gcsEnabled}
+									<button
+										onclick={() => handleCloudExport(item)}
+										disabled={exportingId === item.id}
+										class="p-2 bg-white/20 rounded-full hover:bg-blue-500/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+										title="Cloud Export"
+									>
+										<Cloud class="w-4 h-4 text-white" />
+									</button>
+								{/if}
 								<button
 									onclick={() => deleteImage(item.id)}
 									class="p-2 bg-white/20 rounded-full hover:bg-red-500/50 transition-colors"
@@ -128,6 +166,16 @@
 							<div class="p-2 text-xs">
 								<p class="truncate text-muted-foreground">{item.fileName}</p>
 								<p class="text-muted-foreground/60">{formatDate(item.createdAt)}</p>
+								{#if exportedUrls[item.id]}
+									<button
+										onclick={() => copyUrl(exportedUrls[item.id])}
+										class="mt-1 w-full text-left truncate text-blue-500 hover:text-blue-400 flex items-center gap-1"
+										title={exportedUrls[item.id]}
+									>
+										<Cloud class="w-3 h-3 shrink-0" />
+										<span class="truncate">URL 복사</span>
+									</button>
+								{/if}
 							</div>
 						</div>
 					{/each}

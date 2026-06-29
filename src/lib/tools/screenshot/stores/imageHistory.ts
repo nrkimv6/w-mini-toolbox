@@ -1,4 +1,5 @@
 import { browser } from '$app/environment';
+import { env } from '$env/dynamic/public';
 
 const STORAGE_KEY = 'screenshot-image-history';
 const MAX_HISTORY = 10;
@@ -128,6 +129,44 @@ function createImageHistoryStore() {
 		clearHistory() {
 			_history = [];
 			saveToStorage();
+		},
+
+		/**
+		 * Upload a screenshot dataUrl to GCS via the server-side signed endpoint.
+		 *
+		 * Returns the signed download URL on success, or null if the feature is
+		 * disabled (PUBLIC_ENABLE_GCS_EXPORT !== 'true'), the code runs on the
+		 * server, or the upload fails.
+		 *
+		 * The caller is responsible for user-facing error handling (toast, etc.).
+		 */
+		async exportToGCS(dataUrl: string, fileName: string): Promise<string | null> {
+			// Client-side feature gate
+			if (env.PUBLIC_ENABLE_GCS_EXPORT !== 'true') return null;
+
+			// SSR safety
+			if (!browser) return null;
+
+			try {
+				// Convert dataUrl to Blob
+				const res = await fetch(dataUrl);
+				const blob = await res.blob();
+
+				const formData = new FormData();
+				formData.append('file', blob, fileName);
+
+				const uploadRes = await fetch('/api/gcs-export', {
+					method: 'POST',
+					body: formData
+				});
+
+				if (!uploadRes.ok) return null;
+
+				const data = (await uploadRes.json()) as { url: string };
+				return data.url ?? null;
+			} catch {
+				return null;
+			}
 		}
 	};
 }
