@@ -11,9 +11,11 @@
 		showThinking?: boolean;
 		expandSignal?: number;
 		expandValue?: boolean;
+		/** true면 발화자 메타 헤더(아이콘/라벨/model/timestamp)를 렌더하지 않는다 (연속 발화자 병합용) */
+		hideHeader?: boolean;
 	}
 
-	let { message, showTool = true, showThinking = true, expandSignal, expandValue }: Props = $props();
+	let { message, showTool = true, showThinking = true, expandSignal, expandValue, hideHeader = false }: Props = $props();
 
 	// content를 순서를 보존하며 세그먼트로 묶는다.
 	// - bubble: 연속된 text/기타 블록 → 하나의 말풍선으로 표시
@@ -69,22 +71,24 @@
 </script>
 
 <div class="flex flex-col {roleMeta.align} gap-1">
-	<div class="flex items-center gap-2 text-[11px] text-gray-400">
-		<RoleIcon size={12} />
-		<span class="font-medium text-gray-500">{roleMeta.label}</span>
-		{#if message.model}
-			<span class="rounded bg-gray-100 px-1.5 py-0.5">{message.model}</span>
-		{/if}
-		{#if message.isSidechain}
-			<span class="flex items-center gap-1 rounded bg-amber-100 px-1.5 py-0.5 text-amber-700">
-				<GitBranch size={10} />
-				sub-agent
-			</span>
-		{/if}
-		{#if message.timestamp}
-			<span>{formatTimestamp(message.timestamp)}</span>
-		{/if}
-	</div>
+	{#if !hideHeader}
+		<div class="flex items-center gap-2 text-[11px] text-gray-400">
+			<RoleIcon size={12} />
+			<span class="font-medium text-gray-500">{roleMeta.label}</span>
+			{#if message.model}
+				<span class="rounded bg-gray-100 px-1.5 py-0.5">{message.model}</span>
+			{/if}
+			{#if message.isSidechain}
+				<span class="flex items-center gap-1 rounded bg-amber-100 px-1.5 py-0.5 text-amber-700">
+					<GitBranch size={10} />
+					sub-agent
+				</span>
+			{/if}
+			{#if message.timestamp}
+				<span>{formatTimestamp(message.timestamp)}</span>
+			{/if}
+		</div>
+	{/if}
 
 	<div class="flex w-full flex-col gap-1.5 {roleMeta.align}">
 		{#each segments as seg (seg)}

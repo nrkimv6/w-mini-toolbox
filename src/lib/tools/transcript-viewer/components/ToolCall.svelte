@@ -56,16 +56,11 @@
 	}
 </script>
 
-<div
-	class="my-2 rounded-lg border {isError
-		? 'border-red-300 bg-red-50/60'
-		: 'border-blue-200 bg-blue-50/60'}"
->
+<!-- 색상 톤: 웹 테마 한정 중립화 (Phase 2). CLI 테마 분기는 cli-theme plan 소관이며 이 파일에 CLI 분기가 생기면 절대 건드리지 말 것. -->
+<div class="my-2 rounded-lg border border-gray-200 bg-gray-50/60">
 	<button
 		type="button"
-		class="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-medium {isError
-			? 'text-red-700 hover:bg-red-100/60'
-			: 'text-blue-700 hover:bg-blue-100/60'}"
+		class="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-medium text-gray-600 hover:bg-gray-100"
 		onclick={() => (expanded = !expanded)}
 	>
 		{#if expanded}
@@ -80,21 +75,18 @@
 		{/if}
 		<span>{block.name || 'tool'}</span>
 		{#if isError}
-			<span class="ml-auto rounded-full bg-red-200 px-2 py-0.5 text-[10px] text-red-800">error</span>
+			<span class="ml-auto rounded-full bg-gray-200 px-2 py-0.5 text-[10px] text-amber-700">error</span>
 		{/if}
 	</button>
 	{#if expanded}
-		<div class="border-t {isError ? 'border-red-200' : 'border-blue-200'} px-3 py-2 text-xs">
+		<div class="border-t border-gray-200 px-3 py-2 text-xs">
 			{#if block.input !== undefined}
 				<div class="mb-1 font-semibold text-gray-500">input</div>
 				<pre class="mb-2 overflow-x-auto rounded bg-gray-900 p-2 text-gray-100">{formatInput(block.input)}</pre>
 			{/if}
 			{#if block.result}
 				<div class="mb-1 font-semibold text-gray-500">result</div>
-				<pre
-					class="overflow-x-auto rounded p-2 {isError
-						? 'bg-red-900 text-red-50'
-						: 'bg-gray-900 text-gray-100'}">{formatResultContent(block.result.content)}</pre>
+				<pre class="overflow-x-auto rounded bg-gray-900 p-2 text-gray-100">{formatResultContent(block.result.content)}</pre>
 			{:else}
 				<div class="italic text-gray-400">(matching tool_result 없음)</div>
 			{/if}

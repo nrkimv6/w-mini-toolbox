@@ -2,6 +2,7 @@
 	import { parseTranscript } from '$lib/tools/transcript-viewer/parser.js';
 	import type { ParseResult, RenderMessage } from '$lib/tools/transcript-viewer/types.js';
 	import MessageBlock from '$lib/tools/transcript-viewer/components/MessageBlock.svelte';
+	import { shouldShowHeader } from '$lib/tools/transcript-viewer/speakerGrouping.js';
 	import StatsBar from '$lib/tools/transcript-viewer/components/StatsBar.svelte';
 	import { UploadCloud, ShieldCheck, FileWarning, ChevronsDown, ChevronsUp, FileJson } from 'lucide-svelte';
 
@@ -242,9 +243,12 @@
 			{#if filteredMessages.length === 0}
 				<p class="py-12 text-center text-sm text-gray-400">필터 조건에 맞는 메시지가 없습니다.</p>
 			{:else}
-				<div class="flex flex-col gap-4">
-					{#each filteredMessages as message (message.lineIndex)}
-						<MessageBlock {message} {showTool} {showThinking} {expandSignal} {expandValue} />
+				<div class="flex flex-col">
+					{#each filteredMessages as message, i (message.lineIndex)}
+						{@const hideHeader = !shouldShowHeader(filteredMessages[i - 1], message)}
+						<div class={i === 0 ? '' : hideHeader ? 'mt-1.5' : 'mt-4'}>
+							<MessageBlock {message} {showTool} {showThinking} {expandSignal} {expandValue} {hideHeader} />
+						</div>
 					{/each}
 				</div>
 			{/if}
