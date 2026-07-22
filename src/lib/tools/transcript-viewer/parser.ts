@@ -25,7 +25,7 @@ function normalizeContent(content: unknown): ContentBlock[] {
 	if (content == null) return [];
 
 	if (typeof content === 'string') {
-		if (!content) return [];
+		if (!content.trim()) return [];
 		const block: TextBlock = { type: 'text', text: content };
 		return [block];
 	}
@@ -37,7 +37,8 @@ function normalizeContent(content: unknown): ContentBlock[] {
 			const rec = item as Record<string, unknown>;
 			const type = rec.type;
 			if (type === 'text' && typeof rec.text === 'string') {
-				blocks.push({ type: 'text', text: rec.text } satisfies TextBlock);
+				// 공백만 있는 text 블록은 렌더 대상이 아니므로 버린다
+				if (rec.text.trim()) blocks.push({ type: 'text', text: rec.text } satisfies TextBlock);
 			} else if (type === 'thinking') {
 				blocks.push({
 					type: 'thinking',
@@ -180,6 +181,9 @@ export function parseTranscript(text: string): ParseResult {
 				uuid: typeof rec.uuid === 'string' ? rec.uuid : undefined,
 				version: typeof rec.version === 'string' ? rec.version : undefined,
 				isSidechain: rec.isSidechain === true,
+				subtype: typeof rec.subtype === 'string' ? rec.subtype : undefined,
+				isCompactSummary: rec.isCompactSummary === true,
+				isMeta: rec.isMeta === true,
 				raw: rec
 			};
 			messages.push(msg);

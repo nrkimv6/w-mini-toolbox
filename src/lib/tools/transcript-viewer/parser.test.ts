@@ -120,6 +120,41 @@ describe('parseTranscript', () => {
 		expect(result.meta.models.sort()).toEqual(['claude-opus-4', 'claude-sonnet-5']);
 	});
 
+	it('공백만 있는 문자열 content는 빈 블록으로 정규화한다', () => {
+		const jsonl = [
+			JSON.stringify({ type: 'attachment', message: { role: 'attachment', content: '' } }),
+			JSON.stringify({ type: 'user', message: { role: 'user', content: '   ' } }),
+			JSON.stringify({
+				type: 'assistant',
+				message: { role: 'assistant', content: [{ type: 'text', text: '  ' }] }
+			})
+		].join('\n');
+
+		const result = parseTranscript(jsonl);
+
+		// 라인 자체는 3개 파싱되지만 content는 모두 비어야 한다
+		expect(result.messages).toHaveLength(3);
+		expect(result.messages[0].content).toHaveLength(0);
+		expect(result.messages[1].content).toHaveLength(0);
+		expect(result.messages[2].content).toHaveLength(0);
+	});
+
+	it('compact 흔적 필드(subtype/isCompactSummary)를 파싱한다', () => {
+		const jsonl = [
+			JSON.stringify({ type: 'system', subtype: 'compact_boundary', content: 'Conversation compacted' }),
+			JSON.stringify({
+				type: 'user',
+				isCompactSummary: true,
+				message: { role: 'user', content: 'This session is being continued...' }
+			})
+		].join('\n');
+
+		const result = parseTranscript(jsonl);
+
+		expect(result.messages[0].subtype).toBe('compact_boundary');
+		expect(result.messages[1].isCompactSummary).toBe(true);
+	});
+
 	it('빈 줄과 공백 줄은 무시한다', () => {
 		const jsonl = [
 			'',

@@ -3,7 +3,7 @@
 	import TextContent from './TextContent.svelte';
 	import ThinkingBlock from './ThinkingBlock.svelte';
 	import ToolCall from './ToolCall.svelte';
-	import type { RenderMessage, TextBlock, ThinkingBlock as ThinkingBlockType, ToolUseBlock } from '../types.js';
+	import type { ContentBlock, RenderMessage, TextBlock, ThinkingBlock as ThinkingBlockType, ToolUseBlock } from '../types.js';
 
 	interface Props {
 		message: RenderMessage;
@@ -14,6 +14,31 @@
 	}
 
 	let { message, showTool = true, showThinking = true, expandSignal, expandValue }: Props = $props();
+
+	// content를 순서를 보존하며 세그먼트로 묶는다.
+	// - bubble: 연속된 text/기타 블록 → 하나의 말풍선으로 표시
+	// - card:   thinking/tool_use → 말풍선 없이 독립 카드로 표시 (이중 테두리 방지)
+	type Segment = { kind: 'bubble'; blocks: ContentBlock[] } | { kind: 'card'; block: ContentBlock };
+
+	const segments = $derived.by(() => {
+		const segs: Segment[] = [];
+		let cur: { kind: 'bubble'; blocks: ContentBlock[] } | null = null;
+		for (const block of message.content) {
+			// tool_result는 매칭된 tool_use 카드 내부에서 함께 표시되므로 여기서는 건너뛴다
+			if (block.type === 'tool_result') continue;
+			if (block.type === 'thinking' || block.type === 'tool_use') {
+				cur = null;
+				segs.push({ kind: 'card', block });
+			} else {
+				if (!cur) {
+					cur = { kind: 'bubble', blocks: [] };
+					segs.push(cur);
+				}
+				cur.blocks.push(block);
+			}
+		}
+		return segs;
+	});
 
 	const roleMeta = $derived.by(() => {
 		switch (message.role) {
@@ -41,9 +66,6 @@
 		if (Number.isNaN(d.getTime())) return ts;
 		return d.toLocaleString();
 	}
-
-	// text 블록만 이어붙여 표시할지, 아니면 blocks 순서 그대로 렌더할지는 순서 보존이 중요하므로
-	// content 배열을 순서대로 순회한다.
 </script>
 
 <div class="flex flex-col {roleMeta.align} gap-1">
@@ -64,25 +86,30 @@
 		{/if}
 	</div>
 
-	<div class="max-w-[85%] rounded-2xl px-4 py-3 {roleMeta.bubble}">
-		{#if message.content.length === 0}
-			<span class="text-xs italic opacity-60">(빈 메시지)</span>
-		{/if}
-		{#each message.content as block (block)}
-			{#if block.type === 'text'}
-				<TextContent text={(block as TextBlock).text} />
-			{:else if block.type === 'thinking'}
+	<div class="flex w-full flex-col gap-1.5 {roleMeta.align}">
+		{#each segments as seg (seg)}
+			{#if seg.kind === 'bubble'}
+				<div class="max-w-[85%] rounded-2xl px-4 py-3 {roleMeta.bubble}">
+					{#each seg.blocks as block (block)}
+						{#if block.type === 'text'}
+							<TextContent text={(block as TextBlock).text} />
+						{:else}
+							<div class="text-xs italic opacity-50">(알 수 없는 블록: {block.type})</div>
+						{/if}
+					{/each}
+				</div>
+			{:else if seg.block.type === 'thinking'}
 				{#if showThinking}
-					<ThinkingBlock thinking={(block as ThinkingBlockType).thinking} {expandSignal} {expandValue} />
+					<div class="w-full max-w-[85%]">
+						<ThinkingBlock thinking={(seg.block as ThinkingBlockType).thinking} {expandSignal} {expandValue} />
+					</div>
 				{/if}
-			{:else if block.type === 'tool_use'}
+			{:else if seg.block.type === 'tool_use'}
 				{#if showTool}
-					<ToolCall block={block as ToolUseBlock} {expandSignal} {expandValue} />
+					<div class="w-full max-w-[85%]">
+						<ToolCall block={seg.block as ToolUseBlock} {expandSignal} {expandValue} />
+					</div>
 				{/if}
-			{:else if block.type === 'tool_result'}
-				<!-- tool_result는 매칭된 tool_use 카드 내부에서 함께 표시되므로 별도 렌더 생략 -->
-			{:else}
-				<div class="text-xs italic opacity-50">(알 수 없는 블록: {block.type})</div>
 			{/if}
 		{/each}
 	</div>

@@ -91,6 +91,12 @@ export interface RenderMessage {
 	uuid?: string;
 	version?: string;
 	isSidechain?: boolean;
+	/** 라인 subtype (system 라인의 'compact_boundary' 등) */
+	subtype?: string;
+	/** compact 요약 발언(이전 대화 이어받기) 여부 */
+	isCompactSummary?: boolean;
+	/** 시스템 메타 라인 여부 */
+	isMeta?: boolean;
 	/** 원본 라인 객체 (알 수 없는 필드 참조용) */
 	raw: Record<string, unknown>;
 }

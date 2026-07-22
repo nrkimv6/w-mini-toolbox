@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { parseTranscript } from '$lib/tools/transcript-viewer/parser.js';
-	import type { ParseResult } from '$lib/tools/transcript-viewer/types.js';
+	import type { ParseResult, RenderMessage } from '$lib/tools/transcript-viewer/types.js';
 	import MessageBlock from '$lib/tools/transcript-viewer/components/MessageBlock.svelte';
 	import StatsBar from '$lib/tools/transcript-viewer/components/StatsBar.svelte';
 	import { UploadCloud, ShieldCheck, FileWarning, ChevronsDown, ChevronsUp, FileJson } from 'lucide-svelte';
@@ -16,17 +16,50 @@
 	let showSystem = $state(true);
 	let showTool = $state(true);
 	let showThinking = $state(true);
+	// compact 흔적(경계 알림 + 이어받기 요약)은 기본 숨김
+	let showCompact = $state(false);
 
 	// 전체 펼치기/접기 (ToolCall/ThinkingBlock에 신호 전달)
 	let expandSignal = $state(0);
 	let expandValue = $state(true);
 
+	/** compact 흔적 여부 — 구조화 필드(subtype/isCompactSummary)만으로 판정 */
+	function isCompactTrace(m: RenderMessage): boolean {
+		return m.subtype === 'compact_boundary' || m.isCompactSummary === true;
+	}
+
+	/**
+	 * 현재 필터 기준으로 실제 화면에 그려질 내용이 있는지.
+	 * 빈 메타 라인(attachment/mode/last-prompt 등)과 tool_result만 담은
+	 * 빈 사용자 발언을 숨기기 위한 판정.
+	 */
+	function hasVisibleContent(m: RenderMessage): boolean {
+		for (const b of m.content) {
+			if (b.type === 'text') {
+				if (typeof (b as { text?: string }).text === 'string' && (b as { text: string }).text.trim())
+					return true;
+			} else if (b.type === 'thinking') {
+				if (showThinking && typeof (b as { thinking?: string }).thinking === 'string' && (b as { thinking: string }).thinking.trim())
+					return true;
+			} else if (b.type === 'tool_use') {
+				if (showTool) return true; // 도구 이름 노출은 허용
+			} else if (b.type === 'tool_result') {
+				continue; // 매칭된 tool_use 카드 내부에서만 표시
+			} else {
+				return true; // 알 수 없는 블록은 보존
+			}
+		}
+		return false;
+	}
+
 	const filteredMessages = $derived.by(() => {
 		if (!result) return [];
 		return result.messages.filter((m) => {
+			if (!showCompact && isCompactTrace(m)) return false;
 			if (m.role === 'user' && !showUser) return false;
 			if (m.role === 'assistant' && !showAssistant) return false;
 			if (m.role === 'system' && !showSystem) return false;
+			if (!hasVisibleContent(m)) return false;
 			return true;
 		});
 	});
@@ -196,6 +229,13 @@
 					onclick={() => (showThinking = !showThinking)}
 				>
 					thinking
+				</button>
+				<button
+					type="button"
+					class="rounded-full border px-2.5 py-1 {showCompact ? 'border-gray-400 bg-gray-200 text-gray-700' : 'border-gray-200 text-gray-400'}"
+					onclick={() => (showCompact = !showCompact)}
+				>
+					compact
 				</button>
 			</div>
 
