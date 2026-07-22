@@ -1,13 +1,14 @@
 <script lang="ts">
 	import { tools } from '$lib/data';
-	import { FileText, Smartphone } from 'lucide-svelte';
+	import { FileText, Smartphone, ScrollText } from 'lucide-svelte';
 	import type { ComponentType } from 'svelte';
 	import { APP_VERSION } from '$lib/config';
 
 	// Icon mapping
 	const iconMap: Record<string, ComponentType> = {
 		FileText,
-		Smartphone
+		Smartphone,
+		ScrollText
 	};
 </script>
 

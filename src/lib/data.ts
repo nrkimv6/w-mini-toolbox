@@ -20,5 +20,12 @@ export const tools: Tool[] = [
 		description: '모바일 디바이스 프레임 목업 생성',
 		icon: 'Smartphone',
 		href: '/screenshot'
+	},
+	{
+		id: 'transcript-viewer',
+		name: 'Transcript Viewer',
+		description: 'Claude Code 세션(.jsonl) 뷰어',
+		icon: 'ScrollText',
+		href: '/transcript'
 	}
 ];
