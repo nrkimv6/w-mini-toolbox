@@ -1,8 +1,10 @@
 <script lang="ts">
+	import { getContext } from 'svelte';
 	import { ChevronDown, ChevronRight, Wrench, AlertTriangle } from 'lucide-svelte';
 	import type { ToolUseBlock } from '../types.js';
 	import { summarizeToolInput } from '../toolSummary.js';
 	import { truncateLines } from '../truncate.js';
+	import { matchesToolUse, SEARCH_CONTEXT_KEY, type SearchContext } from '../search.js';
 
 	interface Props {
 		block: ToolUseBlock;
@@ -14,6 +16,18 @@
 	let { block, expandSignal, expandValue }: Props = $props();
 	let expanded = $state(false);
 	let lastSignal = 0;
+
+	// +page.svelte가 setContext로 제공하는 검색 상태. provider가 없는 컨텍스트(단독 렌더 등)를
+	// 대비해 optional로 처리한다.
+	const searchCtx = getContext<SearchContext | undefined>(SEARCH_CONTEXT_KEY);
+
+	// 검색 매칭에 의한 자동 펼침은 expandSignal("모두 펼치기/접기")과 별도 경로로 유지한다.
+	// expanded(수동/전체토글 상태)를 직접 덮어쓰지 않고, 화면에 열림 여부를 판단할 때만 OR로 합성한다.
+	// 검색어를 지우면 원래의 expanded 상태로 복귀한다.
+	const searchMatched = $derived(
+		!!searchCtx?.query.trim() && matchesToolUse(block, searchCtx.query.trim().toLowerCase())
+	);
+	const isOpen = $derived(expanded || searchMatched);
 
 	// truncate 해제 상태는 카드 펼침(expanded)과 별개의 로컬 state로 유지한다.
 	// 전역 expandSignal("모두 펼치기")이 이 상태까지 전파되지 않도록 별도 관리한다 (설계 결정 3).
@@ -102,7 +116,7 @@
 		class="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-medium text-gray-600 hover:bg-gray-100"
 		onclick={() => (expanded = !expanded)}
 	>
-		{#if expanded}
+		{#if isOpen}
 			<ChevronDown size={14} />
 		{:else}
 			<ChevronRight size={14} />
@@ -125,7 +139,7 @@
 			</span>
 		{/if}
 	</button>
-	{#if expanded}
+	{#if isOpen}
 		<div class="border-t border-gray-200 px-3 py-2 text-xs">
 			{#if block.input !== undefined}
 				<div class="mb-1 font-semibold text-gray-500">input</div>

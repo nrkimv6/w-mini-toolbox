@@ -1,10 +1,15 @@
 <script lang="ts">
+	import { setContext } from 'svelte';
 	import { parseTranscript } from '$lib/tools/transcript-viewer/parser.js';
-	import type { ParseResult, RenderMessage } from '$lib/tools/transcript-viewer/types.js';
+	import type { ParseResult, RenderMessage, TextBlock } from '$lib/tools/transcript-viewer/types.js';
 	import MessageBlock from '$lib/tools/transcript-viewer/components/MessageBlock.svelte';
 	import { shouldShowHeader } from '$lib/tools/transcript-viewer/speakerGrouping.js';
 	import StatsBar from '$lib/tools/transcript-viewer/components/StatsBar.svelte';
-	import { UploadCloud, ShieldCheck, FileWarning, ChevronsDown, ChevronsUp, FileJson } from 'lucide-svelte';
+	import { matchesQuery, SEARCH_CONTEXT_KEY, type SearchContext } from '$lib/tools/transcript-viewer/search.js';
+	import TocSidebar, { type TocEntry } from '$lib/tools/transcript-viewer/components/TocSidebar.svelte';
+	import SidechainGroup from '$lib/tools/transcript-viewer/components/SidechainGroup.svelte';
+	import { groupSidechainRuns } from '$lib/tools/transcript-viewer/grouping.js';
+	import { UploadCloud, ShieldCheck, FileWarning, ChevronsDown, ChevronsUp, FileJson, Search, X, List } from 'lucide-svelte';
 
 	let result = $state<ParseResult | null>(null);
 	let fileName = $state('');
@@ -23,6 +28,30 @@
 	// 전체 펼치기/접기 (ToolCall/ThinkingBlock에 신호 전달)
 	let expandSignal = $state(0);
 	let expandValue = $state(true);
+
+	// 검색: 입력은 즉시 반영하되, 필터링/하이라이트에 쓰는 값은 150ms debounce한다.
+	let searchInput = $state('');
+	const SEARCH_DEBOUNCE_MS = 150;
+	// TextContent/ToolCall(MessageBlock 하위)에 prop 드릴링 없이 검색어를 전달하기 위한 context.
+	// $state 프록시 객체를 그대로 넘겨 debounce된 query 갱신이 하위 컴포넌트에도 반응하게 한다.
+	const searchContext: SearchContext = $state({ query: '' });
+	setContext<SearchContext>(SEARCH_CONTEXT_KEY, searchContext);
+
+	$effect(() => {
+		const value = searchInput;
+		const timer = setTimeout(() => {
+			searchContext.query = value;
+		}, SEARCH_DEBOUNCE_MS);
+		return () => clearTimeout(timer);
+	});
+
+	function clearSearch() {
+		searchInput = '';
+		searchContext.query = '';
+	}
+
+	// 대화 목차(TOC) — 모바일에서는 드로어로 노출
+	let tocDrawerOpen = $state(false);
 
 	/** compact 흔적 여부 — 구조화 필드(subtype/isCompactSummary)만으로 판정 */
 	function isCompactTrace(m: RenderMessage): boolean {
@@ -61,8 +90,58 @@
 			if (m.role === 'assistant' && !showAssistant) return false;
 			if (m.role === 'system' && !showSystem) return false;
 			if (!hasVisibleContent(m)) return false;
+			if (!matchesQuery(m, searchContext.query)) return false;
 			return true;
 		});
+	});
+
+	/** 메시지의 첫 텍스트 블록에서 첫 줄을 40자 내외로 요약한다. 텍스트가 없으면 null. */
+	function firstTextSummary(m: RenderMessage): string | null {
+		for (const b of m.content) {
+			if (b.type === 'text' && typeof (b as TextBlock).text === 'string') {
+				const trimmed = (b as TextBlock).text.trim();
+				if (!trimmed) continue;
+				const firstLine = trimmed.split('\n')[0].trim();
+				if (!firstLine) continue;
+				return firstLine.length > 40 ? `${firstLine.slice(0, 40)}…` : firstLine;
+			}
+		}
+		return null;
+	}
+
+	// 렌더 직전 filteredMessages를 sidechain(sub-agent) 연속 구간 기준으로 그룹핑한다.
+	// 경계 판정은 isSidechain 불리언 필드만 사용(구조화 필드 — 자유텍스트 추론 없음).
+	const renderGroups = $derived.by(() => groupSidechainRuns(filteredMessages));
+
+	// 목차는 원본 user 메시지 기준으로 고정한다(필터 소스로 삼으면 필터 변경 때마다 목차가 요동친다).
+	// 필터로 숨겨진 항목은 visible: false로 표시해 흐리게 렌더할 수 있게 한다.
+	const visibleLineIndexSet = $derived.by(() => new Set(filteredMessages.map((m) => m.lineIndex)));
+
+	// 그룹 경계와 무관하게 filteredMessages의 실제 이웃 관계로 header 병합 여부를 판정한다.
+	// (sidechain-group으로 묶인 항목 뒤에 이어지는 일반 메시지도 원래 이웃 규칙을 유지)
+	const hideHeaderMap = $derived.by(() => {
+		const map = new Map<number, boolean>();
+		filteredMessages.forEach((m, i) => {
+			map.set(m.lineIndex, !shouldShowHeader(filteredMessages[i - 1], m));
+		});
+		return map;
+	});
+
+	const tocEntries = $derived.by((): TocEntry[] => {
+		if (!result) return [];
+		const entries: TocEntry[] = [];
+		for (const m of result.messages) {
+			if (m.role !== 'user' || isCompactTrace(m)) continue;
+			const summary = firstTextSummary(m);
+			if (!summary) continue;
+			entries.push({
+				lineIndex: m.lineIndex,
+				summary,
+				timestamp: m.timestamp,
+				visible: visibleLineIndexSet.has(m.lineIndex)
+			});
+		}
+		return entries;
 	});
 
 	async function loadFile(file: File) {
@@ -115,7 +194,8 @@
 </svelte:head>
 
 <div class="min-h-screen bg-background pb-20">
-	<div class="mx-auto max-w-4xl px-4 py-8">
+	<div class="mx-auto flex max-w-6xl gap-6 px-4 py-8 lg:items-start">
+	<div class="mx-auto w-full max-w-4xl flex-1">
 		<div class="mb-6 text-center">
 			<h1 class="mb-2 text-2xl font-bold tracking-tight lg:text-3xl">Transcript Viewer</h1>
 			<p class="text-sm text-muted-foreground">Claude Code 세션(.jsonl) 파일을 브라우저에서 바로 읽어봅니다</p>
@@ -194,6 +274,31 @@
 				</div>
 			{/if}
 
+			<div class="mb-4 flex flex-wrap items-center gap-2">
+				<div class="relative flex-1 min-w-[12rem]">
+					<Search size={14} class="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
+					<input
+						type="text"
+						placeholder="검색 (본문 / 도구 이름·입력·결과)"
+						class="w-full rounded-md border border-gray-200 py-1.5 pl-8 pr-8 text-xs text-gray-700 placeholder:text-gray-400 focus:border-purple-400 focus:outline-none"
+						bind:value={searchInput}
+					/>
+					{#if searchInput}
+						<button
+							type="button"
+							class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+							onclick={clearSearch}
+							aria-label="검색어 지우기"
+						>
+							<X size={14} />
+						</button>
+					{/if}
+				</div>
+				{#if searchContext.query.trim()}
+					<span class="whitespace-nowrap text-xs text-gray-500">{filteredMessages.length}개 일치</span>
+				{/if}
+			</div>
+
 			<div class="mb-4 flex flex-wrap items-center gap-2 text-xs">
 				<span class="text-gray-400">필터:</span>
 				<button
@@ -244,14 +349,57 @@
 				<p class="py-12 text-center text-sm text-gray-400">필터 조건에 맞는 메시지가 없습니다.</p>
 			{:else}
 				<div class="flex flex-col">
-					{#each filteredMessages as message, i (message.lineIndex)}
-						{@const hideHeader = !shouldShowHeader(filteredMessages[i - 1], message)}
-						<div class={i === 0 ? '' : hideHeader ? 'mt-1.5' : 'mt-4'}>
-							<MessageBlock {message} {showTool} {showThinking} {expandSignal} {expandValue} {hideHeader} />
+					{#each renderGroups as group, i (group.kind === 'message' ? group.message.lineIndex : `sc-${group.messages[0].lineIndex}`)}
+						<div class={i === 0 ? '' : 'mt-4'}>
+							{#if group.kind === 'message'}
+								{@const hideHeader = hideHeaderMap.get(group.message.lineIndex) ?? false}
+								<MessageBlock message={group.message} {showTool} {showThinking} {expandSignal} {expandValue} {hideHeader} />
+							{:else}
+								<SidechainGroup messages={group.messages} {showTool} {showThinking} {expandSignal} {expandValue} />
+							{/if}
 						</div>
 					{/each}
 				</div>
 			{/if}
 		{/if}
 	</div>
+
+	{#if result && tocEntries.length > 0}
+		<aside class="sticky top-8 hidden max-h-[calc(100vh-5rem)] w-64 shrink-0 overflow-y-auto lg:block">
+			<div class="mb-2 px-2 text-xs font-semibold text-gray-500">대화 목차</div>
+			<TocSidebar entries={tocEntries} />
+		</aside>
+	{/if}
+	</div>
+
+	{#if result && tocEntries.length > 0}
+		<button
+			type="button"
+			class="fixed bottom-6 right-6 z-30 flex items-center gap-1 rounded-full bg-purple-600 px-4 py-2.5 text-xs font-medium text-white shadow-lg lg:hidden"
+			onclick={() => (tocDrawerOpen = true)}
+		>
+			<List size={14} />
+			목차
+		</button>
+	{/if}
+
+	{#if tocDrawerOpen}
+		<div class="fixed inset-0 z-40 flex justify-end lg:hidden">
+			<button
+				type="button"
+				class="absolute inset-0 bg-black/40"
+				aria-label="목차 닫기"
+				onclick={() => (tocDrawerOpen = false)}
+			></button>
+			<div class="relative flex h-full w-72 max-w-[85vw] flex-col overflow-y-auto bg-white p-4 shadow-xl">
+				<div class="mb-3 flex items-center justify-between">
+					<span class="text-sm font-semibold text-gray-700">대화 목차</span>
+					<button type="button" aria-label="닫기" onclick={() => (tocDrawerOpen = false)}>
+						<X size={16} />
+					</button>
+				</div>
+				<TocSidebar entries={tocEntries} onJump={() => (tocDrawerOpen = false)} />
+			</div>
+		</div>
+	{/if}
 </div>
