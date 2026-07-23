@@ -145,6 +145,10 @@ export interface SessionSummary {
 	subagentCount: number;
 	/** 목록 → 상세 진입 시 파일을 다시 열기 위한 참조. extractSessionSummary는 채우지 않고 scanClaudeProjectsDirectory만 채운다(직렬화·저장 대상 아님) */
 	fileHandle?: FileSystemFileHandle;
+	/** 재스캔 diff의 fingerprint 입력 — extractSessionSummary는 채우지 않고 스캔 확장 진입점만 채운다 */
+	fileSize?: number;
+	/** 재스캔 diff의 fingerprint 입력(epoch ms) — extractSessionSummary는 채우지 않고 스캔 확장 진입점만 채운다 */
+	lastModified?: number;
 }
 
 /** parseTranscript 반환 타입 */
@@ -153,3 +157,48 @@ export interface ParseResult {
 	meta: TranscriptMeta;
 	errors: ParseError[];
 }
+
+/** 세션 목록 스캔 진행 상황 */
+export interface ScanProgress {
+	/** 지금까지 스캔한 파일 수 */
+	scanned: number;
+	/** 스캔 대상 전체 파일 수(사전에 알 수 없으면 undefined) */
+	total?: number;
+	/** 현재 처리 중인 파일 경로 */
+	currentPath?: string;
+}
+
+/** 개별 파일 read/parse 실패 정보 (스캔 전체를 중단시키지 않는다) */
+export interface ScanFailure {
+	path: string;
+	reason: string;
+}
+
+/** 스캔 확장 진입점(`scanWithProgress` 등)의 결과 */
+export interface ScanResult {
+	sessions: SessionSummary[];
+	failures: ScanFailure[];
+	/** 이 스캔 호출을 식별하는 generation 값. 호출자가 부여해 late-generation 결과를 무시하는 데 사용한다(무시 판정 자체는 UI 계층 소유) */
+	generation: number;
+	/** AbortSignal로 중도 취소됐는지 여부. true면 sessions/failures는 부분 결과다 */
+	cancelled: boolean;
+}
+
+/** 재스캔 시 이전/다음 카탈로그를 비교한 diff 결과 */
+export interface CatalogDiff {
+	added: string[];
+	changed: string[];
+	removed: string[];
+}
+
+/** querySessions 검색 조건 */
+export interface SessionQuery {
+	/** 제목/프로젝트(cwd)/브랜치/sessionId 다중 필드 부분일치(대소문자 무시) */
+	text?: string;
+}
+
+/** sortSessions 정렬 기준 키 */
+export type SessionSortKey = 'lastActivity' | 'title' | 'messageCount';
+
+/** sortSessions 정렬 방향 */
+export type SortDirection = 'asc' | 'desc';
