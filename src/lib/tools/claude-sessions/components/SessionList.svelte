@@ -10,9 +10,24 @@
 	// 항목만 tabindex=0이고(현재 포커스 대상 또는 첫 항목), 나머지는 -1이다. 방향키로 그
 	// 대상을 옮기고 Enter로 상세 진입한다. `focusedPath`는 $bindable이라 +page.svelte가
 	// 목록→상세→목록 왕복 시 마지막 포커스 대상을 복원할 수 있다(탐색 상태 복원, Phase 3).
+	//
+	// personalization Phase 2 (즐겨찾기) — 즐겨찾기 표시/해제는 이 컴포넌트가 소유하는 별도
+	// 축(`favoritesOnly` 내부 state)으로 조합한다. 부모(+page.svelte)가 소유한 검색(`sessions`
+	// prop이 이미 querySessions로 필터된 값)·정렬(sortKey/sortDir) 상태는 건드리지 않고, 그
+	// 위에 favoritesOnly 필터를 얹기만 한다 — 검색/정렬을 덮어쓰지 않기 위한 설계다.
+	// 즐겨찾기 키는 localRepository.ts의 `resolveFavoriteKey`(sessionId 우선, 없으면 path)만
+	// 사용한다(자유텍스트 추론 금지).
+	//
+	// "찾을 수 없는 즐겨찾기" — `favorites`는 로컬 저장소 전체 즐겨찾기 목록(검색어로 걸러지지
+	// 않은 원본)이고, `allSessionKeys`는 이번 스캔에서 발견된 모든 세션의 키 집합(검색어로
+	// 걸러지지 않음)이다. 두 값을 비교해 "즐겨찾기했지만 이번 스캔에는 없는" 세션을 판정한다.
+	// `sessions`(검색어로 걸러진 부분집합)만으로는 검색어 때문에 안 보이는 것과 실제로 없는
+	// 것을 구분할 수 없어 별도 prop으로 받는다.
 	import { tick } from 'svelte';
+	import { Star, X } from 'lucide-svelte';
 	import type { SessionSortKey, SessionSummary, SortDirection } from '$lib/tools/transcript-viewer/types.js';
 	import { sortSessions } from '$lib/tools/transcript-viewer/sessionCatalog.js';
+	import { resolveFavoriteKey, type FavoriteEntry } from '$lib/tools/transcript-viewer/localRepository.js';
 	import SessionListItem from './SessionListItem.svelte';
 
 	let {
@@ -21,7 +36,11 @@
 		sortKey = 'lastActivity',
 		sortDir = 'desc',
 		focusedPath = $bindable<string | null>(null),
-		onselect
+		onselect,
+		favorites = [],
+		allSessionKeys = new Set<string>(),
+		onToggleFavorite,
+		onRemoveOrphanedFavorite
 	}: {
 		sessions: SessionSummary[];
 		loading?: boolean;
@@ -30,24 +49,42 @@
 		/** 현재 키보드 포커스 대상 경로. 목록→상세→목록 왕복 시 복원용으로 부모가 바인딩한다 */
 		focusedPath?: string | null;
 		onselect: (path: string) => void;
+		/** 로컬 저장소 전체 즐겨찾기 목록(검색어로 걸러지지 않은 원본) */
+		favorites?: FavoriteEntry[];
+		/** 이번 스캔에서 발견된 모든 세션의 키 집합(검색어로 걸러지지 않음) — 즐겨찾기 유실 판정용 */
+		allSessionKeys?: Set<string>;
+		/** 즐겨찾기 표시/해제 토글. 로컬 저장소 연동은 +page.svelte 소유 */
+		onToggleFavorite: (session: SessionSummary) => void;
+		/** 찾을 수 없는(유실된) 즐겨찾기 1건 삭제 */
+		onRemoveOrphanedFavorite?: (sessionKey: string) => void;
 	} = $props();
 
+	/** personalization Phase 2 — 즐겨찾기만 보기. 부모의 검색/정렬 상태와 별도 축(내부 state)이다 */
+	let favoritesOnly = $state(false);
+
+	const favoriteKeySet = $derived(new Set(favorites.map((f) => f.sessionKey)));
 	const sorted = $derived(sortSessions(sessions, sortKey, sortDir));
+	const displayed = $derived(
+		favoritesOnly ? sorted.filter((s) => favoriteKeySet.has(resolveFavoriteKey(s))) : sorted
+	);
+
+	/** 즐겨찾기했지만 이번 스캔 결과(전체, 검색어 무관)에서 찾을 수 없는 항목 */
+	const orphanedFavorites = $derived(favorites.filter((f) => !allSessionKeys.has(f.sessionKey)));
 
 	let itemEls: Record<string, HTMLButtonElement> = {};
 
 	function indexOfFocused(): number {
 		if (!focusedPath) return -1;
-		return sorted.findIndex((s) => s.path === focusedPath);
+		return displayed.findIndex((s) => s.path === focusedPath);
 	}
 
 	function moveFocus(delta: number) {
-		if (sorted.length === 0) return;
+		if (displayed.length === 0) return;
 		const current = indexOfFocused();
 		const next =
-			current < 0 ? (delta > 0 ? 0 : sorted.length - 1) : Math.max(0, Math.min(sorted.length - 1, current + delta));
-		focusedPath = sorted[next].path;
-		tick().then(() => itemEls[sorted[next].path]?.focus());
+			current < 0 ? (delta > 0 ? 0 : displayed.length - 1) : Math.max(0, Math.min(displayed.length - 1, current + delta));
+		focusedPath = displayed[next].path;
+		tick().then(() => itemEls[displayed[next].path]?.focus());
 	}
 
 	function handleKeydown(e: KeyboardEvent, path: string) {
@@ -63,42 +100,125 @@
 			onselect(path);
 		}
 	}
+
+	function favoriteLabel(session: SessionSummary): string {
+		const isFav = favoriteKeySet.has(resolveFavoriteKey(session));
+		const title = session.aiTitle ?? session.lastPromptPreview ?? session.sessionId ?? session.path;
+		return isFav ? `${title} 즐겨찾기 해제` : `${title} 즐겨찾기 추가`;
+	}
 </script>
 
-{#if loading}
+<div class="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-surface px-3 py-2">
+	<button
+		type="button"
+		onclick={() => (favoritesOnly = !favoritesOnly)}
+		aria-pressed={favoritesOnly}
+		class={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-ring/40 ${
+			favoritesOnly
+				? 'border-primary/40 bg-primary/10 text-primary'
+				: 'border-border bg-background text-muted-foreground hover:bg-secondary'
+		}`}
+	>
+		<Star class="size-3" fill={favoritesOnly ? 'currentColor' : 'none'} aria-hidden="true" />
+		즐겨찾기만 보기{#if favorites.length > 0}
+			<span class="font-mono text-[10px] tabular-nums opacity-80">({favorites.length})</span>
+		{/if}
+	</button>
+</div>
+
+{#if orphanedFavorites.length > 0}
 	<div
 		role="status"
 		aria-live="polite"
-		class="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-border bg-surface px-6 py-16 text-center text-sm text-muted-foreground"
+		class="mt-2 flex flex-col gap-1.5 rounded-lg border border-dashed border-warning/40 bg-warning-soft px-3 py-2 text-xs text-foreground"
 	>
-		<span>세션 목록을 읽는 중입니다…</span>
-	</div>
-{:else if sessions.length === 0}
-	<div
-		role="status"
-		aria-live="polite"
-		class="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border bg-surface px-6 py-16 text-center text-sm text-muted-foreground"
-	>
-		<span>표시할 세션이 없습니다.</span>
-	</div>
-{:else}
-	<div class="flex flex-col gap-2" role="listbox" aria-label="세션 목록">
-		{#each sorted as s, index (s.path)}
-			<button
-				type="button"
-				bind:this={itemEls[s.path]}
-				class="rounded-lg text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-				role="option"
-				aria-selected={s.path === focusedPath}
-				tabindex={s.path === focusedPath || (focusedPath == null && index === 0) ? 0 : -1}
-				onclick={() => {
-					focusedPath = s.path;
-					onselect(s.path);
-				}}
-				onkeydown={(e) => handleKeydown(e, s.path)}
-			>
-				<SessionListItem session={s} />
-			</button>
-		{/each}
+		<span>즐겨찾기 {orphanedFavorites.length}건을 현재 폴더에서 찾을 수 없습니다.</span>
+		<ul class="flex flex-col gap-1">
+			{#each orphanedFavorites as favorite (favorite.sessionKey)}
+				<li class="flex items-center justify-between gap-2 font-mono text-[10px] text-muted-foreground">
+					<span class="truncate">{favorite.path}</span>
+					{#if onRemoveOrphanedFavorite}
+						<button
+							type="button"
+							onclick={() => onRemoveOrphanedFavorite?.(favorite.sessionKey)}
+							aria-label={`${favorite.path} 즐겨찾기 기록 삭제`}
+							class="shrink-0 text-muted-foreground hover:text-foreground focus:outline-none focus:ring-2 focus:ring-ring/40"
+						>
+							<X class="size-3" aria-hidden="true" />
+						</button>
+					{/if}
+				</li>
+			{/each}
+		</ul>
 	</div>
 {/if}
+
+<div class="mt-2">
+	{#if loading}
+		<div
+			role="status"
+			aria-live="polite"
+			class="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-border bg-surface px-6 py-16 text-center text-sm text-muted-foreground"
+		>
+			<span>세션 목록을 읽는 중입니다…</span>
+		</div>
+	{:else if sessions.length === 0}
+		<div
+			role="status"
+			aria-live="polite"
+			class="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border bg-surface px-6 py-16 text-center text-sm text-muted-foreground"
+		>
+			<span>표시할 세션이 없습니다.</span>
+		</div>
+	{:else if favoritesOnly && displayed.length === 0}
+		<div
+			role="status"
+			aria-live="polite"
+			class="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border bg-surface px-6 py-16 text-center text-sm text-muted-foreground"
+		>
+			<span>
+				{#if favorites.length === 0}
+					즐겨찾기한 세션이 없습니다.
+				{:else}
+					즐겨찾기한 세션이 현재 검색 조건에 없습니다.
+				{/if}
+			</span>
+		</div>
+	{:else}
+		<div class="flex flex-col gap-2" role="listbox" aria-label="세션 목록">
+			{#each displayed as s, index (s.path)}
+				{@const isFav = favoriteKeySet.has(resolveFavoriteKey(s))}
+				<div class="flex items-stretch gap-1.5">
+					<button
+						type="button"
+						bind:this={itemEls[s.path]}
+						class="min-w-0 flex-1 rounded-lg text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+						role="option"
+						aria-selected={s.path === focusedPath}
+						tabindex={s.path === focusedPath || (focusedPath == null && index === 0) ? 0 : -1}
+						onclick={() => {
+							focusedPath = s.path;
+							onselect(s.path);
+						}}
+						onkeydown={(e) => handleKeydown(e, s.path)}
+					>
+						<SessionListItem session={s} />
+					</button>
+					<button
+						type="button"
+						onclick={() => onToggleFavorite(s)}
+						aria-pressed={isFav}
+						aria-label={favoriteLabel(s)}
+						class={`shrink-0 self-stretch rounded-lg border px-2.5 transition-colors focus:outline-none focus:ring-2 focus:ring-ring/40 ${
+							isFav
+								? 'border-primary/40 bg-primary/10 text-primary'
+								: 'border-border bg-background text-muted-foreground hover:bg-secondary'
+						}`}
+					>
+						<Star class="size-4" fill={isFav ? 'currentColor' : 'none'} aria-hidden="true" />
+					</button>
+				</div>
+			{/each}
+		</div>
+	{/if}
+</div>
