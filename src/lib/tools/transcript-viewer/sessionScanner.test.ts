@@ -37,7 +37,7 @@ describe('extractSessionSummary', () => {
 		expect(result?.gitBranch).toBe('main');
 		expect(result?.aiTitle).toBe('세션 제목');
 		expect(result?.lastPromptPreview).toBe('마지막 질문');
-		expect(result?.firstTimestamp).toBe('2026-07-23T00:00:05Z');
+		expect(result?.firstTimestamp).toBe('2026-07-23T00:00:00Z');
 		expect(result?.lastTimestamp).toBe('2026-07-23T00:00:05Z');
 		expect(result?.subagentCount).toBe(0);
 		expect(result?.fileHandle).toBeUndefined();
