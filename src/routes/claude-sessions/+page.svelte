@@ -1,20 +1,24 @@
 <script lang="ts">
 	// Phase 4 — 페이지 통합. Phase 1~3이 만든 셸/컴포넌트를 실제 동작하는 화면으로 엮는다.
 	// 재사용: transcript-viewer/parser.ts(parseTranscript)만 import — 수정 금지.
+	import { tick, setContext } from 'svelte';
 	import { parseTranscript } from '$lib/tools/transcript-viewer/parser.js';
 	import type { ParseResult, RenderMessage, SessionSummary } from '$lib/tools/transcript-viewer/types.js';
 	import {
 		isFileSystemAccessSupported,
 		scanClaudeProjectsDirectory
 	} from '$lib/tools/transcript-viewer/sessionScanner.js';
+	import { SEARCH_CONTEXT_KEY } from '$lib/tools/transcript-viewer/search.js';
 	import EntryPanel from '$lib/tools/claude-sessions/components/EntryPanel.svelte';
 	import PrivacyNotice from '$lib/tools/claude-sessions/components/PrivacyNotice.svelte';
 	import MetaBar from '$lib/tools/claude-sessions/components/MetaBar.svelte';
 	import FilterControls from '$lib/tools/claude-sessions/components/FilterControls.svelte';
 	import DetailToolbar from '$lib/tools/claude-sessions/components/DetailToolbar.svelte';
+	import SearchBar from '$lib/tools/claude-sessions/components/SearchBar.svelte';
 	import MessageBlock from '$lib/tools/claude-sessions/components/MessageBlock.svelte';
 	import SessionList from '$lib/tools/claude-sessions/components/SessionList.svelte';
-	import { FileWarning } from 'lucide-svelte';
+	import { buildMatchIndex, stepMatch, clampCurrent, type DetailSearchContext } from '$lib/tools/claude-sessions/searchNav.js';
+	import { FileWarning, RotateCcw } from 'lucide-svelte';
 
 	// item 18 — view 상태머신. `_todo-2`(2026-07-23 재타겟)가 `scanning`/`list` kind를 이 child의
 	// 범위로 확정해 추가한다: `scanning`은 `showDirectoryPicker()` 이후 `scanClaudeProjectsDirectory`
@@ -49,6 +53,20 @@
 	let expandSignal = $state(0);
 	let expandValue = $state(true);
 
+	// Phase 3 (item 6) — 검색 상태. `searchContext.query`는 SearchBar가 debounce를 마친 뒤에만
+	// 갱신하는 확정값이다(입력 즉시값은 SearchBar 내부 로컬 state로만 존재하고 여기까지 올라오지
+	// 않는다 — 매 키 입력마다 buildMatchIndex/하이라이트가 전체 트리에서 재계산되는 것을 막기
+	// 위해서다). `SEARCH_CONTEXT_KEY`는 transcript-viewer/search.ts에서 그대로 재사용한다(신규 키
+	// 정의 금지 — `/transcript`와 동시 마운트되지 않으므로 충돌 없음).
+	const searchContext: DetailSearchContext = $state({ query: '', currentLineIndex: -1 });
+	setContext<DetailSearchContext>(SEARCH_CONTEXT_KEY, searchContext);
+	let currentMatch = $state(0);
+
+	function resetSearch() {
+		searchContext.query = '';
+		currentMatch = 0;
+	}
+
 	/** 압축 이력 판정 — 구조화 필드만 사용한다(자유텍스트 regex 금지, CLAUDE.md 규칙). */
 	function isCompactHistoryMessage(m: RenderMessage): boolean {
 		return m.subtype === 'compact_boundary' || m.isCompactSummary === true;
@@ -79,6 +97,68 @@
 	});
 
 	const visibleCount = $derived(visibleMessages.length);
+
+	// Phase 3 (item 7) — 검색과 필터의 조합 순서: 필터(전체 메시지) → 표시 대상(visibleMessages,
+	// 위에서 이미 계산됨) → buildMatchIndex(표시 대상, 검색어). 검색이 필터 상태 자체를 바꾸지
+	// 않는다(141행) — 그래서 buildMatchIndex는 항상 "필터를 통과한 배열"을 입력으로 받는다.
+	//
+	// 비일치 메시지를 숨길지(item 7 결정): **숨기지 않는다.** 138행은 "메시지와 메시지 안의
+	// 일치 부분을 확인"만 요구하고 숨김을 요구하지 않으며, 숨기려면 검색 활성 시에만 적용되는
+	// 별도 표시 상태가 필요한데 그러면 141행("검색 해제 시 표시 조건이 그대로 남는다")과
+	// 충돌한다 — 필터 4종(showMessages 등) 외에 검색이 만드는 다섯 번째 숨김 축이 생기고, 해제
+	// 시 그 축만 되돌리는 코드가 필요해진다(OR 합성 계약 위반 신호). 대신 일치 항목은 이동
+	// 버튼으로 도달하고(137행), 하이라이트로 어디에 있는지 보여준다(138행).
+	const matches = $derived(buildMatchIndex(visibleMessages, searchContext.query));
+
+	// item 15 — 일치 0건 배너에서 "필터 때문에 안 보이는지" "검색어 자체가 없는지"를 구분하기
+	// 위해, 필터를 적용하지 않은 전체 메시지 기준 일치도 함께 계산한다(검색이 활성 상태일 때만
+	// 의미가 있으므로 비활성 시 빈 배열로 둬 불필요한 계산을 피한다).
+	const matchesInAll = $derived.by(() => {
+		if (view.kind !== 'detail' || !searchContext.query.trim()) return [] as number[];
+		return buildMatchIndex(view.result.messages, searchContext.query);
+	});
+
+	const searchActive = $derived(searchContext.query.trim().length > 0);
+
+	// item 8 — 검색어/필터 변경으로 matches.length가 바뀔 때마다 currentMatch를 유효 범위로
+	// 보정한다. clampCurrent는 유효 범위 안이면 그대로 두므로 이 effect는 실제 보정이 필요할
+	// 때만 currentMatch를 바꾸고, 그 다음 재실행에서는 안정 상태로 수렴한다(무한 루프 없음).
+	$effect(() => {
+		currentMatch = clampCurrent(matches.length, currentMatch);
+	});
+
+	// item 11 — "현재 확인 중인 일치" 메시지의 lineIndex를 컨텍스트에 반영한다. TextContent/
+	// ToolCard/ThinkingCard가 이 값과 자기 메시지의 lineIndex를 비교해 강조 변형을 적용한다.
+	$effect(() => {
+		searchContext.currentLineIndex =
+			currentMatch >= 0 && currentMatch < matches.length
+				? visibleMessages[matches[currentMatch]].lineIndex
+				: -1;
+	});
+
+	function nextMatch() {
+		currentMatch = stepMatch(matches.length, currentMatch, 1);
+	}
+
+	function prevMatch() {
+		currentMatch = stepMatch(matches.length, currentMatch, -1);
+	}
+
+	// Phase 6 (item 14) — 일치 이동 시 대상 메시지로 스크롤 + 포커스. tick()으로 자동 펼침(검색
+	// 매칭으로 카드가 열리는 것) 반영 이후의 DOM 상태를 기다린 뒤 스크롤한다 — 펼침 전에
+	// 스크롤하면 카드 높이가 나중에 바뀌어 위치가 어긋난다.
+	$effect(() => {
+		const lineIndex = searchContext.currentLineIndex;
+		if (lineIndex < 0) return;
+		tick().then(() => {
+			const el = document.getElementById(`cse-msg-${lineIndex}`);
+			if (!el) return;
+			el.scrollIntoView({ block: 'center' });
+			// 키보드/스크린리더 사용자가 이동 결과를 인지할 수 있도록 포커스를 옮긴다(137·136행).
+			el.setAttribute('tabindex', '-1');
+			el.focus({ preventScroll: true });
+		});
+	});
 
 	function resetFilters() {
 		showMessages = true;
@@ -131,6 +211,7 @@
 		readError = null;
 		resetFilters();
 		resetExpand();
+		resetSearch();
 		fromList = false;
 		view = { kind: 'detail', fileName: file.name, result };
 	}
@@ -173,6 +254,7 @@
 			readError = null;
 			resetFilters();
 			resetExpand();
+			resetSearch();
 			fromList = true;
 			view = { kind: 'detail', fileName: session.path, result };
 		} catch {
@@ -209,6 +291,7 @@
 		fromList = false;
 		resetFilters();
 		resetExpand();
+		resetSearch();
 	}
 </script>
 
@@ -280,6 +363,45 @@
 					onOpenAnotherFile={openAnotherFile}
 					onBackToList={fromList ? backToList : undefined}
 				/>
+
+				{#if result.messages.length > 0}
+					<!-- Phase 2 (item 3) — DetailToolbar 아래 별도 줄에 배치(근거: SearchBar.svelte 주석) -->
+					<SearchBar
+						bind:query={searchContext.query}
+						matchCount={matches.length}
+						{currentMatch}
+						onNext={nextMatch}
+						onPrev={prevMatch}
+					/>
+
+					{#if searchActive && matches.length === 0}
+						<!-- item 15 — 일치 0건: 검색어 자체 때문인지, 필터가 가려서인지 문구로 구분한다 -->
+						<div
+							role="status"
+							aria-live="polite"
+							class="rounded-xl border border-dashed border-border bg-surface px-6 py-10 text-center"
+						>
+							<p class="text-sm font-medium text-foreground">
+								"{searchContext.query.trim()}"에 대한 일치 항목이 없습니다.
+							</p>
+							<p class="mt-1 text-xs text-muted-foreground">
+								{#if matchesInAll.length > 0}
+									현재 필터에 가려진 메시지 안에 {matchesInAll.length}건의 일치가 있습니다. 필터를 해제하면 볼 수 있습니다.
+								{:else}
+									다른 검색어를 입력하거나 검색을 해제해 보세요.
+								{/if}
+							</p>
+							<button
+								type="button"
+								onclick={resetSearch}
+								class="mt-4 inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-secondary focus:outline-none focus:ring-2 focus:ring-ring/40"
+							>
+								<RotateCcw class="size-3" aria-hidden="true" />
+								검색 해제
+							</button>
+						</div>
+					{/if}
+				{/if}
 
 				{#if result.messages.length === 0}
 					<!-- design prompt 88행 — 손상되거나 비어 있는 세션: 발견된 문제 + 다음 조작 -->
