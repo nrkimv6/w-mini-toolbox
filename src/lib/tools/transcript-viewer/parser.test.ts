@@ -168,4 +168,35 @@ describe('parseTranscript', () => {
 		expect(result.messages).toHaveLength(1);
 		expect(result.errors).toHaveLength(0);
 	});
+
+	it('ai-title/last-prompt/away_summary/slug 라인을 meta로 캡처한다', () => {
+		const jsonl = [
+			JSON.stringify({ type: 'ai-title', aiTitle: '제목X' }),
+			JSON.stringify({ type: 'last-prompt', lastPrompt: '마지막질문' }),
+			JSON.stringify({ type: 'system', subtype: 'away_summary', content: '이탈요약' }),
+			JSON.stringify({
+				type: 'user',
+				message: { role: 'user', content: 'hello' },
+				slug: 'my-slug'
+			})
+		].join('\n');
+
+		const result = parseTranscript(jsonl);
+
+		expect(result.meta.aiTitle).toBe('제목X');
+		expect(result.meta.lastPromptPreview).toBe('마지막질문');
+		expect(result.meta.awaySummary).toBe('이탈요약');
+		expect(result.meta.slug).toBe('my-slug');
+	});
+
+	it('ai-title/last-prompt/away_summary/slug 라인이 없으면 4개 필드가 undefined다', () => {
+		const jsonl = JSON.stringify({ type: 'user', message: { role: 'user', content: 'x' } });
+
+		const result = parseTranscript(jsonl);
+
+		expect(result.meta.aiTitle).toBeUndefined();
+		expect(result.meta.lastPromptPreview).toBeUndefined();
+		expect(result.meta.awaySummary).toBeUndefined();
+		expect(result.meta.slug).toBeUndefined();
+	});
 });

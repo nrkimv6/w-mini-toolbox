@@ -121,6 +121,10 @@ export function parseTranscript(text: string): ParseResult {
 	let gitBranch: string | undefined;
 	let cwd: string | undefined;
 	let version: string | undefined;
+	let aiTitle: string | undefined;
+	let lastPromptPreview: string | undefined;
+	let awaySummary: string | undefined;
+	let slug: string | undefined;
 	let totalInputTokens = 0;
 	let totalOutputTokens = 0;
 	let totalCacheCreationTokens = 0;
@@ -194,6 +198,14 @@ export function parseTranscript(text: string): ParseResult {
 			if (!gitBranch && msg.gitBranch) gitBranch = msg.gitBranch;
 			if (!cwd && msg.cwd) cwd = msg.cwd;
 			if (!version && msg.version) version = msg.version;
+			// ai-title/last-prompt/away_summary/slug 라인은 rec.message가 없어 messageObj가
+			// 빈 객체(위 messageObj 산출부)이고 그 값이 msg에 복사되지 않으므로, 반드시 최상위 rec에서 직접 읽는다.
+			if (!aiTitle && rec.type === 'ai-title' && typeof rec.aiTitle === 'string') aiTitle = rec.aiTitle;
+			if (!lastPromptPreview && rec.type === 'last-prompt' && typeof rec.lastPrompt === 'string')
+				lastPromptPreview = rec.lastPrompt;
+			if (!awaySummary && rec.type === 'system' && rec.subtype === 'away_summary' && typeof rec.content === 'string')
+				awaySummary = rec.content;
+			if (!slug && typeof rec.slug === 'string') slug = rec.slug;
 			if (usage) {
 				totalInputTokens += num(usage.input_tokens);
 				totalOutputTokens += num(usage.output_tokens);
@@ -228,7 +240,11 @@ export function parseTranscript(text: string): ParseResult {
 		totalCacheCreationTokens,
 		totalCacheReadTokens,
 		firstTimestamp,
-		lastTimestamp
+		lastTimestamp,
+		aiTitle,
+		lastPromptPreview,
+		awaySummary,
+		slug
 	};
 
 	return { messages, meta, errors };

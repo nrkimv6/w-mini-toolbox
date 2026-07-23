@@ -122,6 +122,29 @@ export interface TranscriptMeta {
 	totalCacheReadTokens: number;
 	firstTimestamp?: string;
 	lastTimestamp?: string;
+	/** ai-title 라인의 제목 */
+	aiTitle?: string;
+	/** last-prompt 라인의 마지막 사용자 질문 미리보기 */
+	lastPromptPreview?: string;
+	/** system/away_summary 라인의 이탈 요약 */
+	awaySummary?: string;
+	/** 라인에 포함된 slug 값 */
+	slug?: string;
+}
+
+/** 세션 목록/개요 뷰에서 사용하는 경량 세션 요약 (전체 파싱 없이 산출) */
+export interface SessionSummary {
+	path: string;
+	sessionId?: string;
+	aiTitle?: string;
+	lastPromptPreview?: string;
+	cwd?: string;
+	gitBranch?: string;
+	firstTimestamp?: string;
+	lastTimestamp?: string;
+	subagentCount: number;
+	/** 목록 → 상세 진입 시 파일을 다시 열기 위한 참조. extractSessionSummary는 채우지 않고 scanClaudeProjectsDirectory만 채운다(직렬화·저장 대상 아님) */
+	fileHandle?: FileSystemFileHandle;
 }
 
 /** parseTranscript 반환 타입 */
