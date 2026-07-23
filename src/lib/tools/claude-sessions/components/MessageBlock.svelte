@@ -154,14 +154,24 @@
 		<div class="flex flex-col gap-2">
 			{#each visibleBlocks as block (block)}
 				{#if block.type === 'text'}
-					<TextContent text={(block as TextBlock).text} />
+					<TextContent text={(block as TextBlock).text} lineIndex={message.lineIndex} />
 				{:else if block.type === 'thinking'}
 					{#if showThinking}
-						<ThinkingCard block={block as ThinkingBlockData} {expandSignal} {expandValue} />
+						<ThinkingCard
+							block={block as ThinkingBlockData}
+							lineIndex={message.lineIndex}
+							{expandSignal}
+							{expandValue}
+						/>
 					{/if}
 				{:else if block.type === 'tool_use'}
 					{#if showToolCalls}
-						<ToolCard block={block as ToolUseBlock} {expandSignal} {expandValue} />
+						<ToolCard
+							block={block as ToolUseBlock}
+							lineIndex={message.lineIndex}
+							{expandSignal}
+							{expandValue}
+						/>
 					{/if}
 				{:else}
 					<div class="text-xs italic text-muted-foreground">(알 수 없는 블록: {block.type})</div>
