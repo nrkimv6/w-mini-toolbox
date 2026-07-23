@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { tools } from '$lib/data';
-	import { FileText, Smartphone, ScrollText } from 'lucide-svelte';
+	import { FileText, Smartphone, FolderOpen } from 'lucide-svelte';
 	import type { ComponentType } from 'svelte';
 	import { APP_VERSION } from '$lib/config';
 
@@ -8,7 +8,7 @@
 	const iconMap: Record<string, ComponentType> = {
 		FileText,
 		Smartphone,
-		ScrollText
+		FolderOpen
 	};
 </script>
 

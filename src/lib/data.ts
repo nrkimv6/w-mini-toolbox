@@ -22,10 +22,10 @@ export const tools: Tool[] = [
 		href: '/screenshot'
 	},
 	{
-		id: 'transcript-viewer',
-		name: 'Transcript Viewer',
-		description: 'Claude Code 세션(.jsonl) 뷰어',
-		icon: 'ScrollText',
-		href: '/transcript'
+		id: 'claude-sessions',
+		name: 'Claude Code Session Explorer',
+		description: 'Claude Code 세션 로그(.jsonl) 폴더를 훑어보기',
+		icon: 'FolderOpen',
+		href: '/claude-sessions'
 	}
 ];
