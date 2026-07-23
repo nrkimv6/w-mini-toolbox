@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { User, Bot, Terminal, GitBranch } from 'lucide-svelte';
+	import { User, Bot, Terminal, GitBranch, Code, ChevronDown, ChevronRight, Copy, Check, Flame } from 'lucide-svelte';
 	import TextContent from './TextContent.svelte';
 	import ThinkingBlock from './ThinkingBlock.svelte';
 	import ToolCall from './ToolCall.svelte';
@@ -13,9 +13,23 @@
 		expandValue?: boolean;
 		/** true면 발화자 메타 헤더(아이콘/라벨/model/timestamp)를 렌더하지 않는다 (연속 발화자 병합용) */
 		hideHeader?: boolean;
+		/**
+		 * 출력 토큰 이상치 판정 임계값(세션 전체 출력 토큰 중앙값의 3배).
+		 * `usage.output_tokens`가 이 값을 초과하면 토큰 배지를 강조 표시한다.
+		 * 미지정 시 `Infinity`로 두어 어떤 메시지도 이상치로 판정되지 않는다.
+		 */
+		outlierThreshold?: number;
 	}
 
-	let { message, showTool = true, showThinking = true, expandSignal, expandValue, hideHeader = false }: Props = $props();
+	let {
+		message,
+		showTool = true,
+		showThinking = true,
+		expandSignal,
+		expandValue,
+		hideHeader = false,
+		outlierThreshold = Infinity
+	}: Props = $props();
 
 	// content를 순서를 보존하며 세그먼트로 묶는다.
 	// - bubble: 연속된 text/기타 블록 → 하나의 말풍선으로 표시
@@ -68,6 +82,35 @@
 		if (Number.isNaN(d.getTime())) return ts;
 		return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 	}
+
+	// 원본 라인(raw JSON) 토글 — 메시지 단위 로컬 상태, 기본 접힘.
+	let rawExpanded = $state(false);
+	let rawCopied = $state(false);
+
+	const rawJson = $derived.by(() => {
+		try {
+			return JSON.stringify(message.raw, null, 2);
+		} catch {
+			return String(message.raw);
+		}
+	});
+
+	async function copyRaw() {
+		try {
+			await navigator.clipboard.writeText(rawJson);
+			rawCopied = true;
+			setTimeout(() => {
+				rawCopied = false;
+			}, 1500);
+		} catch {
+			// 클립보드 접근 실패는 조용히 무시한다.
+		}
+	}
+
+	// 토큰 배지 — usage가 없는 메시지(user/system 등)에서는 렌더하지 않는다(방어).
+	const usage = $derived(message.usage);
+	const outputTokens = $derived(typeof usage?.output_tokens === 'number' ? usage.output_tokens : undefined);
+	const isTokenOutlier = $derived(typeof outputTokens === 'number' && outputTokens > outlierThreshold);
 </script>
 
 <div id="transcript-msg-{message.lineIndex}" class="flex flex-col {roleMeta.align} gap-1">
@@ -86,6 +129,39 @@
 			{/if}
 			{#if message.timestamp}
 				<span>{formatTimestamp(message.timestamp)}</span>
+			{/if}
+		</div>
+	{/if}
+
+	{#if usage}
+		<div class="flex flex-wrap items-center gap-1 text-[10px] {roleMeta.align === 'items-end' ? 'justify-end' : ''}">
+			{#if isTokenOutlier}
+				<span class="flex items-center gap-0.5 rounded bg-amber-100 px-1.5 py-0.5 font-medium text-amber-700">
+					<Flame size={10} />
+					이상치
+				</span>
+			{/if}
+			{#if typeof usage.input_tokens === 'number'}
+				<span class="rounded bg-gray-100 px-1.5 py-0.5 text-gray-500">in {usage.input_tokens.toLocaleString()}</span>
+			{/if}
+			{#if typeof outputTokens === 'number'}
+				<span
+					class="rounded px-1.5 py-0.5 {isTokenOutlier
+						? 'bg-amber-100 font-semibold text-amber-800'
+						: 'bg-gray-100 text-gray-500'}"
+				>
+					out {outputTokens.toLocaleString()}
+				</span>
+			{/if}
+			{#if typeof usage.cache_creation_input_tokens === 'number' && usage.cache_creation_input_tokens > 0}
+				<span class="rounded bg-gray-100 px-1.5 py-0.5 text-gray-500">
+					cache+ {usage.cache_creation_input_tokens.toLocaleString()}
+				</span>
+			{/if}
+			{#if typeof usage.cache_read_input_tokens === 'number' && usage.cache_read_input_tokens > 0}
+				<span class="rounded bg-gray-100 px-1.5 py-0.5 text-gray-500">
+					cache✓ {usage.cache_read_input_tokens.toLocaleString()}
+				</span>
 			{/if}
 		</div>
 	{/if}
@@ -116,5 +192,42 @@
 				{/if}
 			{/if}
 		{/each}
+	</div>
+
+	<div class="w-full max-w-[85%] {roleMeta.align === 'items-end' ? 'self-end' : 'self-start'}">
+		<button
+			type="button"
+			class="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+			onclick={() => (rawExpanded = !rawExpanded)}
+		>
+			{#if rawExpanded}
+				<ChevronDown size={10} />
+			{:else}
+				<ChevronRight size={10} />
+			{/if}
+			<Code size={10} />
+			raw
+		</button>
+		{#if rawExpanded}
+			<div class="mt-1 rounded-lg border border-gray-200 bg-gray-50/60">
+				<div class="flex items-center justify-between border-b border-gray-200 px-2 py-1">
+					<span class="text-[10px] font-semibold text-gray-500">raw JSON</span>
+					<button
+						type="button"
+						class="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+						onclick={copyRaw}
+					>
+						{#if rawCopied}
+							<Check size={10} />
+							복사됨
+						{:else}
+							<Copy size={10} />
+							복사
+						{/if}
+					</button>
+				</div>
+				<pre class="max-h-96 overflow-auto rounded-b-lg bg-gray-900 p-2 text-[11px] text-gray-100">{rawJson}</pre>
+			</div>
+		{/if}
 	</div>
 </div>

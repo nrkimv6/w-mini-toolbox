@@ -6,16 +6,22 @@
 	import { shouldShowHeader, shouldShowDateDivider } from '$lib/tools/transcript-viewer/speakerGrouping.js';
 	import DateDivider from '$lib/tools/transcript-viewer/components/DateDivider.svelte';
 	import StatsBar from '$lib/tools/transcript-viewer/components/StatsBar.svelte';
+	import TokenTimeline from '$lib/tools/transcript-viewer/components/TokenTimeline.svelte';
+	import DiagnosticsPanel from '$lib/tools/transcript-viewer/components/DiagnosticsPanel.svelte';
+	import { computeDiagnostics } from '$lib/tools/transcript-viewer/diagnostics.js';
 	import { matchesQuery, SEARCH_CONTEXT_KEY, type SearchContext } from '$lib/tools/transcript-viewer/search.js';
 	import TocSidebar, { type TocEntry } from '$lib/tools/transcript-viewer/components/TocSidebar.svelte';
 	import SidechainGroup from '$lib/tools/transcript-viewer/components/SidechainGroup.svelte';
 	import { groupSidechainRuns } from '$lib/tools/transcript-viewer/grouping.js';
-	import { UploadCloud, ShieldCheck, FileWarning, ChevronsDown, ChevronsUp, FileJson, Search, X, List } from 'lucide-svelte';
+	import { computeTokenStats } from '$lib/tools/transcript-viewer/stats.js';
+	import { UploadCloud, ShieldCheck, FileWarning, ChevronsDown, ChevronsUp, FileJson, Search, X, List, ChevronDown, ChevronRight } from 'lucide-svelte';
 
 	let result = $state<ParseResult | null>(null);
 	let fileName = $state('');
 	let isDragging = $state(false);
 	let loading = $state(false);
+	// 파싱 에러 배너 접이식 확장 토글
+	let showParseErrors = $state(false);
 
 	// role/type 필터
 	let showUser = $state(true);
@@ -113,6 +119,13 @@
 	// 렌더 직전 filteredMessages를 sidechain(sub-agent) 연속 구간 기준으로 그룹핑한다.
 	// 경계 판정은 isSidechain 불리언 필드만 사용(구조화 필드 — 자유텍스트 추론 없음).
 	const renderGroups = $derived.by(() => groupSidechainRuns(filteredMessages));
+
+	// 출력 토큰 이상치 임계값 — 필터와 무관하게 세션 전체(result.messages) 기준으로 고정한다.
+	// (필터를 바꿀 때마다 임계값이 흔들리면 "이상치"의 의미가 바뀌어 버린다)
+	const tokenStats = $derived.by(() => computeTokenStats(result?.messages ?? []));
+
+	// 진단 요약 — 필터와 무관하게 세션 전체(result.messages) 기준으로 고정한다(TokenTimeline과 동일한 이유).
+	const diagnostics = $derived.by(() => computeDiagnostics(result?.messages ?? []));
 
 	// 목차는 원본 user 메시지 기준으로 고정한다(필터 소스로 삼으면 필터 변경 때마다 목차가 요동친다).
 	// 필터로 숨겨진 항목은 visible: false로 표시해 흐리게 렌더할 수 있게 한다.
@@ -289,10 +302,42 @@
 				<StatsBar meta={result.meta} />
 			</div>
 
+			<div class="mb-4">
+				<DiagnosticsPanel {diagnostics} />
+			</div>
+
+			<div class="mb-4">
+				<TokenTimeline messages={result.messages} outlierThreshold={tokenStats.outlierThreshold} />
+			</div>
+
 			{#if result.errors.length > 0}
-				<div class="mb-4 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-					<FileWarning size={16} class="mt-0.5 shrink-0" />
-					<span>파싱에 실패한 라인 {result.errors.length}개는 건너뛰었습니다.</span>
+				<div class="mb-4 rounded-lg border border-amber-200 bg-amber-50 text-xs text-amber-800">
+					<button
+						type="button"
+						class="flex w-full items-center gap-2 px-3 py-2 text-left"
+						onclick={() => (showParseErrors = !showParseErrors)}
+					>
+						{#if showParseErrors}
+							<ChevronDown size={14} class="shrink-0" />
+						{:else}
+							<ChevronRight size={14} class="shrink-0" />
+						{/if}
+						<FileWarning size={16} class="shrink-0" />
+						<span>파싱에 실패한 라인 {result.errors.length}개는 건너뛰었습니다.</span>
+					</button>
+					{#if showParseErrors}
+						<ul class="space-y-2 border-t border-amber-200 px-3 py-2">
+							{#each result.errors as err (err.lineIndex)}
+								<li class="rounded border border-amber-200 bg-white/60 p-2">
+									<div class="mb-1 flex items-center justify-between font-medium">
+										<span>{err.lineIndex}번째 줄</span>
+									</div>
+									<div class="mb-1 text-amber-700">{err.error}</div>
+									<pre class="overflow-x-auto rounded bg-gray-900 p-2 text-[11px] text-gray-100">{err.raw}</pre>
+								</li>
+							{/each}
+						</ul>
+					{/if}
 				</div>
 			{/if}
 
@@ -379,7 +424,15 @@
 								{#if dateLabel}
 									<DateDivider date={dateLabel} />
 								{/if}
-								<MessageBlock message={group.message} {showTool} {showThinking} {expandSignal} {expandValue} {hideHeader} />
+								<MessageBlock
+									message={group.message}
+									{showTool}
+									{showThinking}
+									{expandSignal}
+									{expandValue}
+									{hideHeader}
+									outlierThreshold={tokenStats.outlierThreshold}
+								/>
 							{:else}
 								<SidechainGroup messages={group.messages} {showTool} {showThinking} {expandSignal} {expandValue} />
 							{/if}
