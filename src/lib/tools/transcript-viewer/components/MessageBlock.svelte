@@ -70,7 +70,7 @@
 	}
 </script>
 
-<div class="flex flex-col {roleMeta.align} gap-1">
+<div id="transcript-msg-{message.lineIndex}" class="flex flex-col {roleMeta.align} gap-1">
 	{#if !hideHeader}
 		<div class="flex items-center gap-2 text-[11px] text-gray-400">
 			<RoleIcon size={12} />
