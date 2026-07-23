@@ -44,7 +44,8 @@
 		showThinking = true,
 		expandSignal,
 		expandValue,
-		onClearAll
+		onClearAll,
+		highlighted = false
 	}: {
 		message: RenderMessage | null;
 		showToolCalls?: boolean;
@@ -53,6 +54,12 @@
 		expandValue?: boolean;
 		/** message === null(빈 상태)일 때만 사용되는 "조건 해제" 콜백 (design prompt 78행) */
 		onClearAll?: () => void;
+		/**
+		 * 서브에이전트 탐색(계획서 `claude-sessions-subagent-explorer` Phase 4 item 11) —
+		 * 선택된 에이전트의 첫 활동 메시지 강조. 기존 토큰(`ring`)만 쓰고 하드코딩 색을
+		 * 추가하지 않는다.
+		 */
+		highlighted?: boolean;
 	} = $props();
 
 	const badgeClass = 'rounded-sm bg-secondary px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wider text-muted-foreground';
@@ -117,7 +124,12 @@
 		{/if}
 	</div>
 {:else}
-	<div id="cse-msg-{message.lineIndex}" class="rounded-xl border border-border bg-surface p-4">
+	<div
+		id="cse-msg-{message.lineIndex}"
+		class="rounded-xl border bg-surface p-4 {highlighted
+			? 'border-ring ring-2 ring-ring/50'
+			: 'border-border'}"
+	>
 		<!-- 메타/배지 헤더 — zip 그룹 헤더(696~706) + 배지 스타일(725~748) -->
 		<div class="mb-3 flex flex-wrap items-center justify-between gap-2">
 			<div class="flex flex-wrap items-center gap-2">

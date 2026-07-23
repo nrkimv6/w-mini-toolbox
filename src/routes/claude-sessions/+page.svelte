@@ -41,6 +41,8 @@
 		type LocalRepositoryError,
 		type LocalRepositoryStore
 	} from '$lib/tools/transcript-viewer/localRepository.js';
+	import { groupSidechainRuns } from '$lib/tools/transcript-viewer/grouping.js';
+	import type { RenderGroup } from '$lib/tools/transcript-viewer/grouping.js';
 	import EntryPanel from '$lib/tools/claude-sessions/components/EntryPanel.svelte';
 	import PrivacyNotice from '$lib/tools/claude-sessions/components/PrivacyNotice.svelte';
 	import MetaBar from '$lib/tools/claude-sessions/components/MetaBar.svelte';
@@ -50,7 +52,11 @@
 	import MessageBlock from '$lib/tools/claude-sessions/components/MessageBlock.svelte';
 	import SessionList from '$lib/tools/claude-sessions/components/SessionList.svelte';
 	import ScanStatus from '$lib/tools/claude-sessions/components/ScanStatus.svelte';
+	import AgentPanel from '$lib/tools/claude-sessions/components/AgentPanel.svelte';
+	import AgentGroupCard from '$lib/tools/claude-sessions/components/AgentGroupCard.svelte';
 	import { buildMatchIndex, stepMatch, clampCurrent, type DetailSearchContext } from '$lib/tools/claude-sessions/searchNav.js';
+	import { collectAgentRuns, messagesForAgent } from '$lib/tools/claude-sessions/agentRuns.js';
+	import type { AgentRun } from '$lib/tools/claude-sessions/agentRuns.js';
 	import { FileWarning, FolderOpen, RotateCcw, Search as SearchIcon, ShieldAlert, Trash2, X } from 'lucide-svelte';
 
 	/**
@@ -308,6 +314,48 @@
 	let expandSignal = $state(0);
 	let expandValue = $state(true);
 
+	// 서브에이전트 탐색 (계획서 `claude-sessions-subagent-explorer` Phase 4) — 선택 상태는 필터
+	// 4종·검색과 별도 축이다(item 12 둘째 항목 — 에이전트 필터가 사용자 필터 상태를 바꾸지 않는다).
+	let selectedAgentId = $state<string | null>(null);
+	let showAgentPanel = $state(false);
+	let agentNavAnnouncement = $state('');
+
+	function resetAgentSelection() {
+		selectedAgentId = null;
+		showAgentPanel = false;
+		agentNavAnnouncement = '';
+	}
+
+	// Phase 3 item 8~10 — 전체 세션 메시지 기준(필터·검색 이전)으로 집계한다. 필터가 바뀌어도
+	// 서브에이전트 목록 자체는 흔들리지 않아야 하므로 visibleMessages가 아니라 view.result.messages를 쓴다.
+	const agentRuns = $derived.by((): AgentRun[] => (view.kind === 'detail' ? collectAgentRuns(view.result.messages) : []));
+
+	const selectedAgentRun = $derived(selectedAgentId ? agentRuns.find((r) => r.agentId === selectedAgentId) : undefined);
+	const highlightedLineIndex = $derived(selectedAgentRun ? selectedAgentRun.launchLineIndex : null);
+
+	// item 11 — 첫 활동 위치로 이동 + aria-live 안내. item 165행.
+	function selectAgent(agentId: string) {
+		selectedAgentId = agentId;
+		const run = agentRuns.find((r) => r.agentId === agentId);
+		agentNavAnnouncement = run
+			? `${run.description ?? run.agentId} 에이전트의 첫 활동으로 이동했습니다.`
+			: '';
+		if (!run) return;
+		tick().then(() => {
+			const el = document.getElementById(`cse-msg-${run.launchLineIndex}`);
+			if (!el) return;
+			el.scrollIntoView({ block: 'center' });
+			el.setAttribute('tabindex', '-1');
+			el.focus({ preventScroll: true });
+		});
+	}
+
+	// item 13 — 전체로 돌아가기. 사용자 필터/스크롤 상태는 건드리지 않는다(복원 코드를 새로 만들지 않는다).
+	function clearAgentSelection() {
+		selectedAgentId = null;
+		agentNavAnnouncement = '';
+	}
+
 	// Phase 3 (item 6) — 검색 상태. `searchContext.query`는 SearchBar가 debounce를 마친 뒤에만
 	// 갱신하는 확정값이다(입력 즉시값은 SearchBar 내부 로컬 state로만 존재하고 여기까지 올라오지
 	// 않는다 — 매 키 입력마다 buildMatchIndex/하이라이트가 전체 트리에서 재계산되는 것을 막기
@@ -353,9 +401,29 @@
 
 	const visibleCount = $derived(visibleMessages.length);
 
-	// Phase 3 (item 7) — 검색과 필터의 조합 순서: 필터(전체 메시지) → 표시 대상(visibleMessages,
-	// 위에서 이미 계산됨) → buildMatchIndex(표시 대상, 검색어). 검색이 필터 상태 자체를 바꾸지
-	// 않는다(141행) — 그래서 buildMatchIndex는 항상 "필터를 통과한 배열"을 입력으로 받는다.
+	// Phase 4 (item 13 세 번째 항목) — 필터·에이전트·검색 조합 순서를 **필터 → 에이전트 → 검색**
+	// 순으로 고정한다. visibleMessages(필터 통과분)에서 selectedAgentId로 한 번 더 좁힌 뒤,
+	// 그 결과를 검색(matches)이 입력받는다. 에이전트 필터가 showMessages 등 사용자 필터 상태
+	// 자체를 바꾸지는 않는다(item 12 둘째 항목) — 여기서도 visibleMessages는 그대로 두고
+	// 별도 파생값으로만 좁힌다.
+	const agentFilteredMessages = $derived.by(() => {
+		if (!selectedAgentRun) return visibleMessages;
+		const scopeLineIndexes = new Set(
+			messagesForAgent(view.kind === 'detail' ? view.result.messages : [], selectedAgentRun).map((m) => m.lineIndex)
+		);
+		return visibleMessages.filter((m) => scopeLineIndexes.has(m.lineIndex));
+	});
+
+	// Phase 5 — groupSidechainRuns(grouping.ts, 수정 금지)로 표시 대상을 렌더 그룹으로 변환한다.
+	// 현재 세션 스키마에서는 inline sidechain 라인이 없어 그룹이 전부 { kind: 'message' }로만
+	// 나온다 — **0개 sidechain-group이 정상이며 결함이 아니다**(Phase 1 항목 4). 구버전 세션이
+	// 열렸을 때만 sidechain-group이 실제로 나타난다.
+	const displayGroups = $derived.by((): RenderGroup[] => groupSidechainRuns(agentFilteredMessages));
+
+	// Phase 3 (item 7) — 검색과 필터의 조합 순서: 필터(전체 메시지) → 에이전트로 좁힌 표시 대상
+	// (agentFilteredMessages) → buildMatchIndex(표시 대상, 검색어). 검색이 필터/에이전트 상태
+	// 자체를 바꾸지 않는다(141행) — 그래서 buildMatchIndex는 항상 "필터+에이전트를 통과한
+	// 배열"을 입력으로 받는다.
 	//
 	// 비일치 메시지를 숨길지(item 7 결정): **숨기지 않는다.** 138행은 "메시지와 메시지 안의
 	// 일치 부분을 확인"만 요구하고 숨김을 요구하지 않으며, 숨기려면 검색 활성 시에만 적용되는
@@ -363,7 +431,7 @@
 	// 충돌한다 — 필터 4종(showMessages 등) 외에 검색이 만드는 다섯 번째 숨김 축이 생기고, 해제
 	// 시 그 축만 되돌리는 코드가 필요해진다(OR 합성 계약 위반 신호). 대신 일치 항목은 이동
 	// 버튼으로 도달하고(137행), 하이라이트로 어디에 있는지 보여준다(138행).
-	const matches = $derived(buildMatchIndex(visibleMessages, searchContext.query));
+	const matches = $derived(buildMatchIndex(agentFilteredMessages, searchContext.query));
 
 	// item 15 — 일치 0건 배너에서 "필터 때문에 안 보이는지" "검색어 자체가 없는지"를 구분하기
 	// 위해, 필터를 적용하지 않은 전체 메시지 기준 일치도 함께 계산한다(검색이 활성 상태일 때만
@@ -467,6 +535,7 @@
 		resetFilters();
 		resetExpand();
 		resetSearch();
+		resetAgentSelection();
 		fromList = false;
 		view = { kind: 'detail', fileName: file.name, result };
 	}
@@ -615,6 +684,7 @@
 		sortKey = restored.sortKey;
 		sortDir = restored.sortDir;
 		listFocusedPath = restored.focusedPath;
+		resetAgentSelection();
 		view = { kind: 'list' };
 		tick().then(() => {
 			if (typeof window !== 'undefined') window.scrollTo(0, restored.scrollTop);
@@ -645,6 +715,7 @@
 		resetFilters();
 		resetExpand();
 		resetSearch();
+		resetAgentSelection();
 	}
 </script>
 
@@ -937,6 +1008,48 @@
 					onBackToList={fromList ? backToList : undefined}
 				/>
 
+				<!-- Phase 3~4 (item 10 둘째 항목) — 서브에이전트 진입 조작: 런이 0건이면 동작 없는
+				     컨트롤을 남기지 않기 위해 토글 버튼 자체를 렌더하지 않는다(이 세션에는 서브에이전트가
+				     없다는 사실은 AgentPanel이 아니라 이 버튼의 부재로도 전달된다는 결정) -->
+				{#if agentRuns.length > 0}
+					<div class="flex items-center gap-2">
+						<button
+							type="button"
+							onclick={() => (showAgentPanel = !showAgentPanel)}
+							aria-expanded={showAgentPanel}
+							class="rounded-md border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-secondary focus:outline-none focus:ring-2 focus:ring-ring/40"
+						>
+							서브에이전트 ({agentRuns.length}) {showAgentPanel ? '숨기기' : '보기'}
+						</button>
+					</div>
+				{/if}
+
+				{#if showAgentPanel}
+					<AgentPanel runs={agentRuns} {selectedAgentId} onSelect={selectAgent} />
+				{/if}
+
+				<!-- item 11 — 이동 사실을 스크린리더/키보드 사용자에게 알린다(시각적으로는 숨김) -->
+				<p class="sr-only" role="status" aria-live="polite">{agentNavAnnouncement}</p>
+
+				{#if selectedAgentId}
+					<!-- item 12 셋째 항목 · item 13 — 표시 중 개수 + "이 화면에서 확인 가능한 활동" 안내
+					     + 항상 노출되는 전체로 돌아가기 조작 -->
+					<div
+						role="status"
+						aria-live="polite"
+						class="flex items-center justify-between gap-3 rounded-md border border-border bg-surface px-4 py-2 text-xs text-muted-foreground"
+					>
+						<span>선택한 서브에이전트 활동만 표시 중 — {agentFilteredMessages.length}건. 이 화면에서 확인 가능한 활동입니다.</span>
+						<button
+							type="button"
+							onclick={clearAgentSelection}
+							class="shrink-0 rounded-md border border-border bg-background px-2.5 py-1 text-[11px] font-medium text-foreground transition-colors hover:bg-secondary focus:outline-none focus:ring-2 focus:ring-ring/40"
+						>
+							전체 세션 보기
+						</button>
+					</div>
+				{/if}
+
 				{#if result.messages.length > 0}
 					<!-- Phase 2 (item 3) — DetailToolbar 아래 별도 줄에 배치(근거: SearchBar.svelte 주석) -->
 					<SearchBar
@@ -1028,11 +1141,34 @@
 					/>
 
 					<div class="flex flex-col gap-3">
-						{#if visibleMessages.length === 0}
-							<MessageBlock message={null} onClearAll={resetFilters} />
+						{#if agentFilteredMessages.length === 0}
+							<!-- 에이전트로 좁힌 결과가 0건이면 필터 초기화가 아니라 에이전트 선택 해제가
+							     실제 복구 조작이다(selectedAgentId 유무로 분기) -->
+							<MessageBlock message={null} onClearAll={selectedAgentId ? clearAgentSelection : resetFilters} />
 						{:else}
-							{#each visibleMessages as message (message.lineIndex)}
-								<MessageBlock {message} {showToolCalls} {showThinking} {expandSignal} {expandValue} />
+							{#each displayGroups as group (group.kind === 'message' ? `m-${group.message.lineIndex}` : `g-${group.messages[0]?.lineIndex ?? 'empty'}`)}
+								{#if group.kind === 'message'}
+									<MessageBlock
+										message={group.message}
+										{showToolCalls}
+										{showThinking}
+										{expandSignal}
+										{expandValue}
+										highlighted={group.message.lineIndex === highlightedLineIndex}
+									/>
+								{:else}
+									<!-- Phase 5 — sidechain-group. 현재 세션 스키마에서는 0건이 정상(Phase 1
+									     항목 4) — 구버전 세션이 열렸을 때만 실제로 렌더된다 -->
+									<AgentGroupCard
+										messages={group.messages}
+										{showToolCalls}
+										{showThinking}
+										{expandSignal}
+										{expandValue}
+										{highlightedLineIndex}
+										onSelectAgent={selectAgent}
+									/>
+								{/if}
 							{/each}
 						{/if}
 					</div>
