@@ -1,39 +1,114 @@
+@import '@fontsource-variable/inter';
+@import '@fontsource-variable/jetbrains-mono';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 @layer base {
 	:root {
-		--background: 0 0% 100%;
-		--foreground: 240 10% 3.9%;
+		/* 배경 계열 */
+		--canvas: 0.985 0.002 90;
+		--surface: 0.975 0.003 90;
+		--background: 1 0 0;
+		--foreground: 0.18 0.01 260;
 
-		--card: 0 0% 100%;
-		--card-foreground: 240 10% 3.9%;
+		/* 카드/팝오버 */
+		--card: 1 0 0;
+		--card-foreground: 0.18 0.01 260;
+		--popover: 1 0 0;
+		--popover-foreground: 0.18 0.01 260;
 
-		--primary: 280 60% 50%;
-		--primary-foreground: 0 0% 98%;
+		/* primary/secondary/muted/accent */
+		--primary: 0.22 0.01 260;
+		--primary-foreground: 0.985 0.002 90;
+		--secondary: 0.955 0.004 260;
+		--secondary-foreground: 0.22 0.01 260;
+		--muted: 0.96 0.004 260;
+		--muted-foreground: 0.48 0.01 260;
+		--accent: 0.955 0.004 260;
+		--accent-foreground: 0.22 0.01 260;
 
-		--secondary: 240 4.8% 95.9%;
-		--secondary-foreground: 240 5.9% 10%;
+		/* 상태색 */
+		--destructive: 0.55 0.2 27;
+		--destructive-foreground: 0.985 0.002 90;
+		--warning: 0.72 0.15 70;
+		--warning-foreground: 0.28 0.08 60;
+		--warning-soft: 0.97 0.04 85;
+		--success: 0.62 0.14 155;
 
-		--muted: 240 4.8% 95.9%;
-		--muted-foreground: 240 3.8% 46.1%;
+		/* 경계/포커스 */
+		--border: 0.9 0.006 260;
+		--input: 0.9 0.006 260;
+		--ring: 0.55 0.02 260;
 
-		--accent: 240 4.8% 95.9%;
-		--accent-foreground: 240 5.9% 10%;
-
-		--destructive: 0 84.2% 60.2%;
-		--destructive-foreground: 0 0% 98%;
-
-		--border: 240 5.9% 90%;
-		--input: 240 5.9% 90%;
-		--ring: 240 10% 3.9%;
+		/* 소스 --chart-1~5, --sidebar-*는 index.tsx가 사용하지 않아 미이식 */
 
 		--radius: 0.5rem;
+		--radius-sm: calc(var(--radius) - 4px);
+		--radius-md: calc(var(--radius) - 2px);
+		--radius-lg: var(--radius);
+		--radius-xl: calc(var(--radius) + 4px);
+		--radius-2xl: calc(var(--radius) + 8px);
+		/* 소스 --radius-3xl/4xl은 index.tsx 미사용이므로 미이식 */
+	}
+
+	.dark {
+		/* 배경/텍스트 */
+		--background: 0.129 0.042 264.695;
+		--foreground: 0.984 0.003 247.858;
+		--card: 0.208 0.042 265.755;
+		--card-foreground: 0.984 0.003 247.858;
+		--popover: 0.208 0.042 265.755;
+		--popover-foreground: 0.984 0.003 247.858;
+
+		/* primary/secondary/muted/accent */
+		--primary: 0.929 0.013 255.508;
+		--primary-foreground: 0.208 0.042 265.755;
+		--secondary: 0.279 0.041 260.031;
+		--secondary-foreground: 0.984 0.003 247.858;
+		--muted: 0.279 0.041 260.031;
+		--muted-foreground: 0.704 0.04 256.788;
+		--accent: 0.279 0.041 260.031;
+		--accent-foreground: 0.984 0.003 247.858;
+
+		/* 상태/경계 */
+		--destructive: 0.704 0.191 22.216;
+		--destructive-foreground: 0.984 0.003 247.858;
+		--ring: 0.551 0.027 264.364;
+
+		/*
+		 * alpha 포함 토큰 2건: 소스 --border: oklch(1 0 0 / 10%), --input: oklch(1 0 0 / 15%).
+		 * 성분값 "1 0 0"만 저장하고 alpha는 사용처에서 border-border/10, border-input/15로 표현한다.
+		 * (DESIGN.md Phase 2에 동일 규칙을 명문화)
+		 */
+		--border: 1 0 0;
+		--input: 1 0 0;
+
+		/*
+		 * 소스 .dark는 --canvas/--surface/--warning*/--success를 재정의하지 않아 :root 값이 그대로
+		 * 상속된다. 다크 모드 토글 UI가 없으므로(항목 8) 기본은 "그대로 둔다" — 별도 다크 전용 값을
+		 * 추가하지 않는다.
+		 */
 	}
 
 	html,
 	body {
-		@apply h-full bg-white text-gray-900;
+		@apply h-full bg-canvas text-foreground;
+	}
+
+	body {
+		@apply font-sans;
+		font-feature-settings:
+			'cv11',
+			'ss01',
+			'ss03';
+	}
+
+	code,
+	pre,
+	.font-mono {
+		/* @apply font-mono는 .font-mono 셀렉터 자체와 순환 참조가 발생해 theme()로 직접 참조한다 */
+		font-family: theme('fontFamily.mono');
 	}
 }
