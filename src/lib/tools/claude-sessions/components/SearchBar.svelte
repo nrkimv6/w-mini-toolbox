@@ -50,9 +50,19 @@
 	// 컴포넌트 내부 `draft`는 갱신되지 않아 입력창에 지운 검색어가 그대로 남아 있었다. 대기 중인
 	// debounce 타이머가 없을 때만(= 내 자신의 타이핑 중이 아닐 때만) draft를 query에 맞춘다 —
 	// 타이핑 중에는 timer가 걸려 있어 이 동기화가 최신 입력을 덮지 않는다.
+	//
+	// `draft`/`query`를 먼저 지역 변수로 읽어 두는 이유(재발 방지, 2026-07-23 라이브 재현) —
+	// `if (timer === undefined && draft !== query)`처럼 조건식 안에서 바로 읽으면, timer가
+	// 걸려 있는 실행 회차(&&가 첫 피연산자에서 단락)에는 `draft`/`query`를 아예 읽지 않는다.
+	// Svelte의 `$effect`는 "이번 실행에서 실제로 읽은 값"만 다음 재실행 의존성으로 추적하므로,
+	// 그 회차에서 두 값을 스킵하면 이후 어떤 값이 바뀌어도 이 effect가 다시는 실행되지 않는다
+	// (타이핑 1회 후 외부 리셋이 영구히 반영되지 않는 결함으로 실제 재현됨). 매 실행마다
+	// 두 값을 무조건 먼저 읽어 의존성 추적이 끊기지 않게 한다.
 	$effect(() => {
-		if (timer === undefined && draft !== query) {
-			draft = query;
+		const currentDraft = draft;
+		const currentQuery = query;
+		if (timer === undefined && currentDraft !== currentQuery) {
+			draft = currentQuery;
 		}
 	});
 
