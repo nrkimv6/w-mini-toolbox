@@ -2,25 +2,37 @@
 	// Phase 4 — 페이지 통합. Phase 1~3이 만든 셸/컴포넌트를 실제 동작하는 화면으로 엮는다.
 	// 재사용: transcript-viewer/parser.ts(parseTranscript)만 import — 수정 금지.
 	import { parseTranscript } from '$lib/tools/transcript-viewer/parser.js';
-	import type { ParseResult, RenderMessage } from '$lib/tools/transcript-viewer/types.js';
+	import type { ParseResult, RenderMessage, SessionSummary } from '$lib/tools/transcript-viewer/types.js';
+	import {
+		isFileSystemAccessSupported,
+		scanClaudeProjectsDirectory
+	} from '$lib/tools/transcript-viewer/sessionScanner.js';
 	import EntryPanel from '$lib/tools/claude-sessions/components/EntryPanel.svelte';
 	import PrivacyNotice from '$lib/tools/claude-sessions/components/PrivacyNotice.svelte';
 	import MetaBar from '$lib/tools/claude-sessions/components/MetaBar.svelte';
 	import FilterControls from '$lib/tools/claude-sessions/components/FilterControls.svelte';
 	import DetailToolbar from '$lib/tools/claude-sessions/components/DetailToolbar.svelte';
 	import MessageBlock from '$lib/tools/claude-sessions/components/MessageBlock.svelte';
+	import SessionList from '$lib/tools/claude-sessions/components/SessionList.svelte';
 	import { FileWarning } from 'lucide-svelte';
 
-	// item 18 — view 상태머신. `scanning`/`list` kind는 폴더 스캐너·세션 목록 화면(이 child 범위 밖,
-	// 소유 미결정) 전용으로 나중에 추가될 수 있으므로 kind 값을 확장 가능한 discriminated union으로
-	// 열어 두되, 그 두 kind는 지금 만들지 않는다. `loading`은 이 child의 필수 요구사항(design prompt
-	// 28행 "읽는 중" 상태 노출)이라 지금 구현한다.
+	// item 18 — view 상태머신. `_todo-2`(2026-07-23 재타겟)가 `scanning`/`list` kind를 이 child의
+	// 범위로 확정해 추가한다: `scanning`은 `showDirectoryPicker()` 이후 `scanClaudeProjectsDirectory`
+	// 완료까지의 폴더 스캔 로딩 상태, `list`는 스캔된 세션 목록 화면이다. `loading`은 단일 파일
+	// 진입(design prompt 28행 "읽는 중" 상태 노출) 전용으로 그대로 유지한다.
 	type ViewState =
 		| { kind: 'entry' }
 		| { kind: 'loading'; fileName: string }
+		| { kind: 'scanning' }
+		| { kind: 'list' }
 		| { kind: 'detail'; fileName: string; result: ParseResult };
 
 	let view = $state<ViewState>({ kind: 'entry' });
+
+	// item 9(재타겟) — 폴더 스캔 결과와, 목록 경유로 상세에 진입했는지 여부.
+	// `fromList`는 상세 뷰의 "목록으로" 버튼 노출 조건(item 12)과 `reset` 계열 함수의 복귀 대상을 결정한다.
+	let sessions = $state<SessionSummary[]>([]);
+	let fromList = $state(false);
 
 	// EntryPanel의 readError prop 계약(Phase 2 메모) — 파일 전체를 읽지 못한 경우(86행)와
 	// 예상하지 못한 파싱 오류(90행)를 모두 이 배너 하나로 안내한다. 두 경로 모두 "로컬 파일은
@@ -119,7 +131,59 @@
 		readError = null;
 		resetFilters();
 		resetExpand();
+		fromList = false;
 		view = { kind: 'detail', fileName: file.name, result };
+	}
+
+	// item 10(재타겟) — "폴더 열기" 진입점. `showDirectoryPicker()` → 스캔 → `list` 전환.
+	// picker 취소(`AbortError`)는 조용히 무시한다(item 10 요구사항).
+	async function openFolder() {
+		if (!window.showDirectoryPicker) return;
+		view = { kind: 'scanning' };
+		try {
+			const handle = await window.showDirectoryPicker();
+			sessions = await scanClaudeProjectsDirectory(handle);
+			view = { kind: 'list' };
+		} catch (err) {
+			if (err instanceof DOMException && err.name === 'AbortError') {
+				view = { kind: 'entry' };
+				return;
+			}
+			readError = {
+				fileName: '(폴더)',
+				reason: `폴더를 여는 중 오류가 발생했습니다. 로컬 파일은 변경되지 않았습니다. (${
+					err instanceof Error ? err.message : String(err)
+				})`
+			};
+			view = { kind: 'entry' };
+		}
+	}
+
+	// item 11(재타겟) — 목록에서 세션 선택 시 `fileHandle`로 다시 읽어 상세로 전환한다.
+	// `fileHandle`이 없는 구형 결과는 조용히 무시한다(item 11 대체 옵션).
+	async function openFromList(path: string) {
+		const session = sessions.find((s) => s.path === path);
+		if (!session?.fileHandle) return;
+
+		view = { kind: 'loading', fileName: session.path };
+		try {
+			const file = await session.fileHandle.getFile();
+			const text = await file.text();
+			const result = parseTranscript(text);
+			readError = null;
+			resetFilters();
+			resetExpand();
+			fromList = true;
+			view = { kind: 'detail', fileName: session.path, result };
+		} catch {
+			// 목록에서 선택한 세션을 열지 못한 경우 — 목록으로 조용히 되돌린다.
+			view = { kind: 'list' };
+		}
+	}
+
+	/** item 12(재타겟) — 목록 경유로 진입한 상세 뷰에서 목록으로 되돌아간다. */
+	function backToList() {
+		view = { kind: 'list' };
 	}
 
 	function expandAll() {
@@ -136,11 +200,13 @@
 	function openAnotherFile() {
 		view = { kind: 'entry' };
 		readError = null;
+		fromList = false;
 	}
 
 	function backToStart() {
 		view = { kind: 'entry' };
 		readError = null;
+		fromList = false;
 		resetFilters();
 		resetExpand();
 	}
@@ -176,7 +242,24 @@
 		</header>
 
 		{#if view.kind === 'entry'}
-			<EntryPanel onFilePicked={openFile} {readError} />
+			<EntryPanel
+				onFilePicked={openFile}
+				{readError}
+				onOpenFolder={openFolder}
+				folderSupported={isFileSystemAccessSupported()}
+			/>
+		{:else if view.kind === 'scanning'}
+			<!-- item 10(재타겟) — 폴더 스캔 중 상태 -->
+			<div
+				role="status"
+				aria-live="polite"
+				class="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-border bg-surface px-6 py-16 text-center text-sm text-muted-foreground"
+			>
+				<span>폴더를 스캔하는 중입니다…</span>
+			</div>
+		{:else if view.kind === 'list'}
+			<!-- item 8~9(재타겟) — 세션 목록 -->
+			<SessionList {sessions} onselect={openFromList} />
 		{:else if view.kind === 'loading'}
 			<!-- design prompt 28행 — 읽는 중 상태 -->
 			<div
@@ -195,6 +278,7 @@
 					onExpandAll={expandAll}
 					onCollapseAll={collapseAll}
 					onOpenAnotherFile={openAnotherFile}
+					onBackToList={fromList ? backToList : undefined}
 				/>
 
 				{#if result.messages.length === 0}

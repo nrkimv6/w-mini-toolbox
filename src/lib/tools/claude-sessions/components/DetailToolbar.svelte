@@ -15,14 +15,19 @@
 	//     페이지가 이 콜백에서 `view`를 `{ kind: 'entry' }`로 되돌리면 EntryPanel이 다시 마운트되어
 	//     동일한 드롭존/파일 선택 흐름을 그대로 재사용하게 된다 — DetailToolbar가 파일 입력을
 	//     중복 구현하지 않는다.
+	// (2026-07-23 `_todo-2` 재타겟, item 12) 목록에서 진입한 세션에서만 "목록으로" 버튼을
+	// 노출한다. `onBackToList`가 없으면(단일 파일 드래그 진입) 렌더하지 않는다 — 기존
+	// "다른 파일 열기"만 있던 동작을 그대로 보존한다.
 	let {
 		onExpandAll,
 		onCollapseAll,
-		onOpenAnotherFile
+		onOpenAnotherFile,
+		onBackToList
 	}: {
 		onExpandAll: () => void;
 		onCollapseAll: () => void;
 		onOpenAnotherFile: () => void;
+		onBackToList?: () => void;
 	} = $props();
 
 	const buttonClass =
@@ -32,5 +37,8 @@
 <div class="flex flex-wrap items-center gap-2">
 	<button type="button" onclick={onExpandAll} class={buttonClass}>모두 펼치기</button>
 	<button type="button" onclick={onCollapseAll} class={buttonClass}>모두 접기</button>
+	{#if onBackToList}
+		<button type="button" onclick={onBackToList} class={buttonClass}>목록으로</button>
+	{/if}
 	<button type="button" onclick={onOpenAnotherFile} class={buttonClass}>다른 파일 열기</button>
 </div>

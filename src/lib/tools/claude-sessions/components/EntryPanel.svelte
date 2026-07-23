@@ -15,18 +15,24 @@
 	//   - 확장자 불일치(item 7)는 이 컴포넌트 내부에서만 처리하고 상위로 알리지 않는다 — 로컬 검증이며
 	//     Phase 4의 파싱/view 전환과 무관하다.
 	//
-	// 폴더 선택 버튼은 배치하지 않는다(계획서 item 7·미승인 제안 표) — 스캐너가 없어 동작 없는 버튼이 되므로.
-	// 같은 이유로 zip 원본의 "폴더 스캔 지원 여부" 안내 문구(hasDirPicker 분기)도 이식하지 않았다 —
-	// 폴더 기능 자체가 이 child에 없으므로 그 기능의 지원 여부를 안내하는 문구도 대상이 아니다(편차 기록).
+	// (2026-07-23 `_todo-2` 재타겟) 스캐너(`sessionScanner.ts`)가 main에 머지됨에 따라
+	// "폴더 열기" 버튼을 조건부로 추가한다. `folderSupported`가 true이고 `onOpenFolder`가
+	// 주어졌을 때만 렌더되므로, 스캐너 미제공 소비자(과거 comment의 우려)에는 영향이 없다.
 	import { FolderOpen, FileText } from 'lucide-svelte';
 	import EntryAside from './EntryAside.svelte';
 
 	let {
 		onFilePicked,
-		readError = null
+		readError = null,
+		onOpenFolder,
+		folderSupported = false
 	}: {
 		onFilePicked: (file: File) => void;
 		readError?: { fileName: string; reason: string } | null;
+		/** 폴더 열기(디렉터리 스캔) 콜백. 없으면 폴더 열기 버튼을 렌더하지 않는다. */
+		onOpenFolder?: () => void;
+		/** File System Access API 지원 여부(`isFileSystemAccessSupported()`) — false면 버튼 미노출 */
+		folderSupported?: boolean;
 	} = $props();
 
 	let dragOver = $state(false);
@@ -110,6 +116,16 @@
 				<FileText class="size-4" aria-hidden="true" />
 				단일 파일 선택
 			</button>
+			{#if folderSupported && onOpenFolder}
+				<button
+					type="button"
+					onclick={onOpenFolder}
+					class="inline-flex items-center gap-2 rounded-md border border-border bg-background px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-secondary focus:outline-none focus:ring-2 focus:ring-ring/40"
+				>
+					<FolderOpen class="size-4" aria-hidden="true" />
+					폴더 열기
+				</button>
+			{/if}
 		</div>
 
 		{#if extensionError}
