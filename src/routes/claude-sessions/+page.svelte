@@ -1,7 +1,7 @@
 <script lang="ts">
 	// Phase 4 — 페이지 통합. Phase 1~3이 만든 셸/컴포넌트를 실제 동작하는 화면으로 엮는다.
 	// 재사용: transcript-viewer/parser.ts(parseTranscript)만 import — 수정 금지.
-	import { tick, setContext } from 'svelte';
+	import { tick, setContext, onMount } from 'svelte';
 	import { parseTranscript } from '$lib/tools/transcript-viewer/parser.js';
 	import type {
 		CatalogDiff,
@@ -22,6 +22,25 @@
 		type ListNavSnapshot
 	} from '$lib/tools/transcript-viewer/sessionCatalogFlow.js';
 	import { SEARCH_CONTEXT_KEY } from '$lib/tools/transcript-viewer/search.js';
+	import {
+		isIndexedDbSupported,
+		createIndexedDbStore,
+		openLocalRepository,
+		resetLocalRepository,
+		readFavorites,
+		addFavorite,
+		removeFavorite,
+		resolveFavoriteKey,
+		readRecentFolders,
+		upsertRecentFolder,
+		removeRecentFolder,
+		clearRecentFolders,
+		verifyRecentFolderPermission,
+		type FavoriteEntry,
+		type RecentFolderEntry,
+		type LocalRepositoryError,
+		type LocalRepositoryStore
+	} from '$lib/tools/transcript-viewer/localRepository.js';
 	import EntryPanel from '$lib/tools/claude-sessions/components/EntryPanel.svelte';
 	import PrivacyNotice from '$lib/tools/claude-sessions/components/PrivacyNotice.svelte';
 	import MetaBar from '$lib/tools/claude-sessions/components/MetaBar.svelte';
@@ -32,7 +51,19 @@
 	import SessionList from '$lib/tools/claude-sessions/components/SessionList.svelte';
 	import ScanStatus from '$lib/tools/claude-sessions/components/ScanStatus.svelte';
 	import { buildMatchIndex, stepMatch, clampCurrent, type DetailSearchContext } from '$lib/tools/claude-sessions/searchNav.js';
-	import { FileWarning, RotateCcw, Search as SearchIcon, X } from 'lucide-svelte';
+	import { FileWarning, FolderOpen, RotateCcw, Search as SearchIcon, ShieldAlert, Trash2, X } from 'lucide-svelte';
+
+	/**
+	 * personalization Phase 2 — `FileSystemDirectoryHandle.requestPermission`은 이 프로젝트의
+	 * TypeScript `lib.dom.d.ts` 번들에 아직 포함되지 않아 로컬로 보강한다(sessionScanner.ts의
+	 * `values()`/`showDirectoryPicker` 보강과 동일한 사유). `queryPermission` 보강은
+	 * localRepository.ts가 이미 소유한다 — 여기서는 재승인(request) 쪽만 추가한다.
+	 */
+	declare global {
+		interface FileSystemDirectoryHandle {
+			requestPermission?(descriptor?: { mode?: 'read' | 'readwrite' }): Promise<PermissionState>;
+		}
+	}
 
 	// item 18 — view 상태머신. `_todo-2`(2026-07-23 재타겟)가 `scanning`/`list` kind를 이 child의
 	// 범위로 확정해 추가한다: `scanning`은 `showDirectoryPicker()` 이후 `scanClaudeProjectsDirectory`
@@ -76,6 +107,165 @@
 
 	const DEFAULT_SORT_KEY: SessionSortKey = 'lastActivity';
 	const DEFAULT_SORT_DIR: SortDirection = 'desc';
+
+	// personalization Phase 2 — 로컬 전용 개인화(즐겨찾기·최근 폴더) 상태. transcript 본문은
+	// 저장하지 않는다(localRepository.ts 계약). `localRepoStatus`는 초기화·오류·미지원을
+	// 구분해 entry 화면에 노출한다(계획서 item 3).
+	let localStore = $state<LocalRepositoryStore | null>(null);
+	let localRepoStatus = $state<'loading' | 'ready' | 'unsupported' | 'error'>('loading');
+	let localRepoError = $state<LocalRepositoryError | null>(null);
+	let favorites = $state<FavoriteEntry[]>([]);
+	let recentFolders = $state<RecentFolderEntry[]>([]);
+	let recentFolderPermission = $state<Record<string, 'checking' | 'granted' | 'expired' | 'unknown'>>({});
+	let recentFolderActionError = $state<string | null>(null);
+
+	/** 이번 스캔에서 발견된 전체 세션 키(검색어 무관) — SessionList의 유실 즐겨찾기 판정용 */
+	const allSessionKeys = $derived(new Set(sessions.map((s) => resolveFavoriteKey(s))));
+
+	async function reloadLocalRepositoryData() {
+		if (!localStore) return;
+		const favResult = await readFavorites(localStore);
+		if (favResult.ok) favorites = favResult.value;
+		const recentResult = await readRecentFolders(localStore);
+		if (recentResult.ok) {
+			recentFolders = recentResult.value;
+			await refreshRecentFolderPermissions(recentFolders);
+		}
+	}
+
+	/** 저장된 최근 폴더 핸들의 읽기 권한을 조용히(프롬프트 없이) 확인해 배지 상태를 채운다 */
+	async function refreshRecentFolderPermissions(entries: RecentFolderEntry[]) {
+		const next: Record<string, 'checking' | 'granted' | 'expired' | 'unknown'> = {};
+		for (const entry of entries) {
+			const result = await verifyRecentFolderPermission(entry.handle);
+			next[entry.id] = result.ok ? 'granted' : result.error.kind === 'permission-expired' ? 'expired' : 'unknown';
+		}
+		recentFolderPermission = next;
+	}
+
+	/** entry 화면 진입 시 1회 로컬 저장소를 연다. 알 수 없는 schema version은 열지 않고 오류로 남긴다 */
+	async function initLocalRepository() {
+		if (!isIndexedDbSupported()) {
+			localRepoStatus = 'unsupported';
+			return;
+		}
+		try {
+			const store = await createIndexedDbStore();
+			const opened = await openLocalRepository(store);
+			localStore = store;
+			if (!opened.ok) {
+				localRepoError = opened.error;
+				localRepoStatus = 'error';
+				return;
+			}
+			localRepoStatus = 'ready';
+			localRepoError = null;
+			await reloadLocalRepositoryData();
+		} catch (err) {
+			localRepoError = { kind: 'unknown', message: err instanceof Error ? err.message : String(err) };
+			localRepoStatus = 'error';
+		}
+	}
+
+	/** 초기화 action(알 수 없는 schema version 복구) — 전체를 비우고 현재 버전으로 재기록한다 */
+	async function resetLocalRepo() {
+		if (!localStore) return;
+		const result = await resetLocalRepository(localStore);
+		if (result.ok) {
+			localRepoError = null;
+			localRepoStatus = 'ready';
+			favorites = [];
+			recentFolders = [];
+			recentFolderPermission = {};
+		} else {
+			localRepoError = result.error;
+		}
+	}
+
+	/** 저장소 연결 재시도(오류 배너의 "다시 시도") */
+	async function retryLocalRepository() {
+		localRepoStatus = 'loading';
+		await initLocalRepository();
+	}
+
+	/** 세션 목록 즐겨찾기 표시/해제 토글 — SessionList가 세션 단위로 호출한다 */
+	async function toggleFavorite(session: SessionSummary) {
+		if (!localStore) return;
+		const key = resolveFavoriteKey(session);
+		const isFav = favorites.some((f) => f.sessionKey === key);
+		const result = isFav ? await removeFavorite(localStore, key) : await addFavorite(localStore, session);
+		if (result.ok) {
+			await reloadLocalRepositoryData();
+		} else {
+			localRepoError = result.error;
+			localRepoStatus = 'error';
+		}
+	}
+
+	/** 유실된(현재 스캔에 없는) 즐겨찾기 1건 삭제 */
+	async function removeOrphanedFavorite(sessionKey: string) {
+		if (!localStore) return;
+		const result = await removeFavorite(localStore, sessionKey);
+		if (result.ok) await reloadLocalRepositoryData();
+	}
+
+	/** "YYYY-MM-DD HH:mm" 축약(로케일 비의존, SessionListItem.shortTimestamp와 동일 패턴) */
+	function formatRecentFolderTimestamp(iso: string): string {
+		return iso.slice(0, 16).replace('T', ' ');
+	}
+
+	/** 최근 폴더 "다시 열기" — 이미 granted로 확인된 핸들만 이 버튼을 노출한다(마크업 조건) */
+	async function reopenRecentFolder(entry: RecentFolderEntry) {
+		recentFolderActionError = null;
+		fromList = false;
+		await runScan(entry.handle);
+	}
+
+	/** 최근 폴더 "권한 재승인" — `requestPermission`으로 사용자에게 재승인을 요청한 뒤 재스캔한다 */
+	async function reauthorizeRecentFolder(entry: RecentFolderEntry) {
+		recentFolderActionError = null;
+		if (!entry.handle.requestPermission) {
+			recentFolderActionError = '이 브라우저는 권한 재요청을 지원하지 않습니다. 폴더를 다시 선택해 주세요.';
+			return;
+		}
+		try {
+			const state = await entry.handle.requestPermission({ mode: 'read' });
+			if (state !== 'granted') {
+				recentFolderPermission = { ...recentFolderPermission, [entry.id]: 'expired' };
+				return;
+			}
+			recentFolderPermission = { ...recentFolderPermission, [entry.id]: 'granted' };
+			fromList = false;
+			await runScan(entry.handle);
+		} catch (err) {
+			recentFolderActionError = err instanceof Error ? err.message : String(err);
+		}
+	}
+
+	/** 최근 폴더 기록 1건 삭제(핸들 자체나 즐겨찾기에는 영향 없음) */
+	async function deleteRecentFolderEntry(id: string) {
+		if (!localStore) return;
+		const result = await removeRecentFolder(localStore, id);
+		if (result.ok) {
+			recentFolders = recentFolders.filter((f) => f.id !== id);
+			const { [id]: _removed, ...rest } = recentFolderPermission;
+			recentFolderPermission = rest;
+		}
+	}
+
+	/** 최근 폴더 기록 전체 삭제(즐겨찾기는 유지 — localRepository.clearRecentFolders 계약) */
+	async function clearAllRecentFolders() {
+		if (!localStore) return;
+		const result = await clearRecentFolders(localStore);
+		if (result.ok) {
+			recentFolders = [];
+			recentFolderPermission = {};
+		}
+	}
+
+	onMount(() => {
+		initLocalRepository();
+	});
 
 	const filteredSessions = $derived(querySessions(sessions, { text: searchQuery }));
 	const listFiltersActive = $derived(
@@ -322,6 +512,24 @@
 		scanScanned = result.sessions.length + result.failures.length;
 		rescanning = false;
 		view = { kind: 'list' };
+
+		// personalization Phase 2 — 폴더 핸들 재사용은 scanClaudeProjectsDirectory 계열
+		// 진입점(runScan이 감싸는 scanWithProgress)을 그대로 재호출하는 방식으로 이뤄지고,
+		// 이 스캔이 성공한 시점에 최근 폴더 기록을 갱신한다(스캔 로직 자체는 신규 작성 없음).
+		if (localStore && !result.cancelled) {
+			const recentEntry: RecentFolderEntry = {
+				id: handle.name,
+				name: handle.name,
+				handle,
+				lastOpenedAt: new Date().toISOString(),
+				sessionCount: sessions.length
+			};
+			const upserted = await upsertRecentFolder(localStore, recentEntry);
+			if (upserted.ok) {
+				recentFolders = upserted.value;
+				recentFolderPermission = { ...recentFolderPermission, [handle.name]: 'granted' };
+			}
+		}
 	}
 
 	/** Phase 1 — 진행 중인 스캔 취소. `scanWithProgress`가 지금까지의 부분 결과를 반환한다 */
@@ -470,12 +678,135 @@
 		</header>
 
 		{#if view.kind === 'entry'}
-			<EntryPanel
-				onFilePicked={openFile}
-				{readError}
-				onOpenFolder={openFolder}
-				folderSupported={isFileSystemAccessSupported()}
-			/>
+			<div class="flex flex-col gap-6">
+				<EntryPanel
+					onFilePicked={openFile}
+					{readError}
+					onOpenFolder={openFolder}
+					folderSupported={isFileSystemAccessSupported()}
+				/>
+
+				<!-- personalization Phase 2 — 최근 폴더 + 로컬 저장소 초기화/오류/재시도.
+				     PrivacyNotice(로컬·읽기 전용 pill)는 이미 wrapper 최상단에서 모든 상태에
+				     걸쳐 노출되므로(위 배치 계약), 여기서는 즐겨찾기·최근 폴더가 "그 안"의
+				     저장소(IndexedDB)를 쓴다는 점만 짧게 덧붙인다. -->
+				{#if localRepoStatus === 'unsupported'}
+					<div
+						role="status"
+						aria-live="polite"
+						class="flex items-center gap-2 rounded-xl border border-dashed border-border bg-surface px-4 py-3 text-xs text-muted-foreground"
+					>
+						<ShieldAlert class="size-3.5 shrink-0" aria-hidden="true" />
+						<span>이 브라우저는 로컬 저장소(IndexedDB)를 지원하지 않아 즐겨찾기·최근 폴더를 쓸 수 없습니다.</span>
+					</div>
+				{:else if localRepoStatus === 'error'}
+					<div
+						role="alert"
+						class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-destructive/40 bg-destructive/5 px-4 py-3 text-xs text-destructive"
+					>
+						<span>
+							{#if localRepoError?.kind === 'unknown-schema-version'}
+								알 수 없는 로컬 저장소 버전입니다{#if localRepoError?.storedVersion !== undefined}
+									(저장된 버전: {localRepoError.storedVersion}){/if}. 즐겨찾기·최근 폴더를 읽을 수 없습니다.
+							{:else}
+								로컬 저장소 오류: {localRepoError?.message ?? '알 수 없는 오류'}
+							{/if}
+						</span>
+						<div class="flex items-center gap-2">
+							<button
+								type="button"
+								onclick={retryLocalRepository}
+								class="inline-flex items-center gap-1.5 rounded-md border border-destructive/40 bg-background px-3 py-1 text-[11px] font-medium text-destructive transition-colors hover:bg-destructive/10 focus:outline-none focus:ring-2 focus:ring-ring/40"
+							>
+								<RotateCcw class="size-3" aria-hidden="true" />
+								다시 시도
+							</button>
+							<button
+								type="button"
+								onclick={resetLocalRepo}
+								class="inline-flex items-center gap-1.5 rounded-md border border-destructive/40 bg-background px-3 py-1 text-[11px] font-medium text-destructive transition-colors hover:bg-destructive/10 focus:outline-none focus:ring-2 focus:ring-ring/40"
+							>
+								<Trash2 class="size-3" aria-hidden="true" />
+								로컬 저장소 초기화
+							</button>
+						</div>
+					</div>
+				{/if}
+
+				{#if recentFolderActionError}
+					<div
+						role="alert"
+						class="flex items-center justify-between gap-3 rounded-xl border border-destructive/40 bg-destructive/5 px-4 py-3 text-xs text-destructive"
+					>
+						<span>{recentFolderActionError}</span>
+						<button
+							type="button"
+							onclick={() => (recentFolderActionError = null)}
+							aria-label="오류 알림 닫기"
+							class="text-destructive hover:opacity-80 focus:outline-none focus:ring-2 focus:ring-ring/40"
+						>
+							<X class="size-3.5" aria-hidden="true" />
+						</button>
+					</div>
+				{/if}
+
+				{#if recentFolders.length > 0}
+					<section aria-label="최근 폴더" class="rounded-xl border border-border bg-surface p-4">
+						<div class="mb-3 flex items-center justify-between gap-2">
+							<h2 class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">최근 폴더</h2>
+							<button
+								type="button"
+								onclick={clearAllRecentFolders}
+								class="inline-flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground hover:text-foreground focus:outline-none focus:ring-2 focus:ring-ring/40"
+							>
+								<Trash2 class="size-3" aria-hidden="true" />
+								전체 기록 삭제
+							</button>
+						</div>
+						<ul class="flex flex-col gap-2">
+							{#each recentFolders as folder (folder.id)}
+								<li class="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-background px-3 py-2">
+									<div class="flex min-w-0 flex-col gap-0.5">
+										<span class="truncate text-sm font-medium text-foreground">{folder.name}</span>
+										<span class="font-mono text-[10px] text-muted-foreground">
+											{formatRecentFolderTimestamp(folder.lastOpenedAt)} · 세션 {folder.sessionCount ?? '?'}개
+										</span>
+									</div>
+									<div class="flex shrink-0 items-center gap-1.5">
+										{#if recentFolderPermission[folder.id] === 'expired' || recentFolderPermission[folder.id] === 'unknown'}
+											<span class="text-[10px] font-medium text-warning-foreground">권한 만료</span>
+											<button
+												type="button"
+												onclick={() => reauthorizeRecentFolder(folder)}
+												class="inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-2.5 py-1 text-xs font-medium text-foreground transition-colors hover:bg-secondary focus:outline-none focus:ring-2 focus:ring-ring/40"
+											>
+												권한 재승인
+											</button>
+										{:else}
+											<button
+												type="button"
+												onclick={() => reopenRecentFolder(folder)}
+												class="inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-2.5 py-1 text-xs font-medium text-foreground transition-colors hover:bg-secondary focus:outline-none focus:ring-2 focus:ring-ring/40"
+											>
+												<FolderOpen class="size-3" aria-hidden="true" />
+												다시 열기
+											</button>
+										{/if}
+										<button
+											type="button"
+											onclick={() => deleteRecentFolderEntry(folder.id)}
+											aria-label={`${folder.name} 최근 폴더 기록 삭제`}
+											class="rounded-md p-1 text-muted-foreground hover:bg-secondary hover:text-foreground focus:outline-none focus:ring-2 focus:ring-ring/40"
+										>
+											<Trash2 class="size-3.5" aria-hidden="true" />
+										</button>
+									</div>
+								</li>
+							{/each}
+						</ul>
+					</section>
+				{/if}
+			</div>
 		{:else if view.kind === 'scanning'}
 			<!-- item 10(재타겟) — 폴더 스캔 중 상태. _todo-2 Phase 1 — 진행 수치 + 취소 action -->
 			<ScanStatus scanning={true} scanned={scanScanned} currentPath={scanCurrentPath} onCancel={cancelScan} />
@@ -579,6 +910,10 @@
 					{sortDir}
 					bind:focusedPath={listFocusedPath}
 					onselect={openFromList}
+					{favorites}
+					{allSessionKeys}
+					onToggleFavorite={toggleFavorite}
+					onRemoveOrphanedFavorite={removeOrphanedFavorite}
 				/>
 			</div>
 		{:else if view.kind === 'loading'}
