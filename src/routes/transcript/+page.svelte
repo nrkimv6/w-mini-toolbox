@@ -3,7 +3,8 @@
 	import { parseTranscript } from '$lib/tools/transcript-viewer/parser.js';
 	import type { ParseResult, RenderMessage, TextBlock } from '$lib/tools/transcript-viewer/types.js';
 	import MessageBlock from '$lib/tools/transcript-viewer/components/MessageBlock.svelte';
-	import { shouldShowHeader } from '$lib/tools/transcript-viewer/speakerGrouping.js';
+	import { shouldShowHeader, shouldShowDateDivider } from '$lib/tools/transcript-viewer/speakerGrouping.js';
+	import DateDivider from '$lib/tools/transcript-viewer/components/DateDivider.svelte';
 	import StatsBar from '$lib/tools/transcript-viewer/components/StatsBar.svelte';
 	import { matchesQuery, SEARCH_CONTEXT_KEY, type SearchContext } from '$lib/tools/transcript-viewer/search.js';
 	import TocSidebar, { type TocEntry } from '$lib/tools/transcript-viewer/components/TocSidebar.svelte';
@@ -123,6 +124,27 @@
 		const map = new Map<number, boolean>();
 		filteredMessages.forEach((m, i) => {
 			map.set(m.lineIndex, !shouldShowHeader(filteredMessages[i - 1], m));
+		});
+		return map;
+	});
+
+	/** timestamp를 "YYYY년 M월 D일" 라벨로 포맷한다. 없거나 파싱 불가면 빈 문자열. */
+	function formatDateLabel(ts?: string): string {
+		if (!ts) return '';
+		const d = new Date(ts);
+		if (Number.isNaN(d.getTime())) return '';
+		return `${d.getFullYear()}년 ${d.getMonth() + 1}월 ${d.getDate()}일`;
+	}
+
+	// 날짜 변경지점 구분선 — 그룹 경계와 무관하게 filteredMessages의 원본 이웃 관계로 판정한다.
+	// (hideHeaderMap과 동일한 이웃 판정 방식. 값이 빈 문자열이면 timestamp 없음/파싱 불가로
+	// 구분선을 렌더하지 않는다.)
+	const dateDividerMap = $derived.by(() => {
+		const map = new Map<number, string>();
+		filteredMessages.forEach((m, i) => {
+			if (shouldShowDateDivider(filteredMessages[i - 1], m)) {
+				map.set(m.lineIndex, formatDateLabel(m.timestamp));
+			}
 		});
 		return map;
 	});
@@ -353,6 +375,10 @@
 						<div class={i === 0 ? '' : 'mt-4'}>
 							{#if group.kind === 'message'}
 								{@const hideHeader = hideHeaderMap.get(group.message.lineIndex) ?? false}
+								{@const dateLabel = dateDividerMap.get(group.message.lineIndex)}
+								{#if dateLabel}
+									<DateDivider date={dateLabel} />
+								{/if}
 								<MessageBlock message={group.message} {showTool} {showThinking} {expandSignal} {expandValue} {hideHeader} />
 							{:else}
 								<SidechainGroup messages={group.messages} {showTool} {showThinking} {expandSignal} {expandValue} />

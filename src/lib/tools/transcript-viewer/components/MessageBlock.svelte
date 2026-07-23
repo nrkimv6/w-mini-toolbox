@@ -66,7 +66,7 @@
 		if (!ts) return '';
 		const d = new Date(ts);
 		if (Number.isNaN(d.getTime())) return ts;
-		return d.toLocaleString();
+		return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 	}
 </script>
 
