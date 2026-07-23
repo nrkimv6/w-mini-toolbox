@@ -5,7 +5,7 @@
  * 하이라이트/자동펼침 판단에 사용한다. DOM/Svelte 런타임에 의존하지 않아 단위 테스트가 가능하다.
  */
 
-import type { ContentBlock, RenderMessage, ToolUseBlock } from './types.js';
+import type { ContentBlock, RenderMessage, TextBlock, ThinkingBlock, ToolUseBlock } from './types.js';
 
 /** Svelte context에 검색어를 실어 나르기 위한 공용 키. +page.svelte(setContext)와
  * TextContent.svelte/ToolCall.svelte(getContext)가 동일 키를 참조해야 한다. */
@@ -60,13 +60,15 @@ export function matchesToolUse(block: ToolUseBlock, needle: string): boolean {
 
 /** 콘텐츠 블록 하나가 검색어와 매칭되는지. `needle`은 trim + lowercase된 값이어야 한다. */
 function blockMatches(block: ContentBlock, needle: string): boolean {
+	// UnknownBlock.type은 `string`이라 discriminated union 자동 narrowing이
+	// `TextBlock | UnknownBlock` 형태로 남는다 — 명시 캐스팅으로 좁힌다.
 	switch (block.type) {
 		case 'text':
-			return (block.text ?? '').toLowerCase().includes(needle);
+			return ((block as TextBlock).text ?? '').toLowerCase().includes(needle);
 		case 'thinking':
-			return (block.thinking ?? '').toLowerCase().includes(needle);
+			return ((block as ThinkingBlock).thinking ?? '').toLowerCase().includes(needle);
 		case 'tool_use':
-			return matchesToolUse(block, needle);
+			return matchesToolUse(block as ToolUseBlock, needle);
 		default:
 			return false;
 	}
