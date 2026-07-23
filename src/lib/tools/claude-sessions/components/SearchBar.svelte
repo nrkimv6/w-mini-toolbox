@@ -45,6 +45,17 @@
 	let inputEl = $state<HTMLInputElement | undefined>(undefined);
 	let timer: ReturnType<typeof setTimeout> | undefined;
 
+	// T4 라이브 검증(2026-07-23)에서 발견 — 부모가 `searchContext.query`를 외부에서 직접
+	// 초기화하면(예: 일치 0건 배너의 "검색 해제" 버튼, `+page.svelte`의 `resetSearch()`) 이
+	// 컴포넌트 내부 `draft`는 갱신되지 않아 입력창에 지운 검색어가 그대로 남아 있었다. 대기 중인
+	// debounce 타이머가 없을 때만(= 내 자신의 타이핑 중이 아닐 때만) draft를 query에 맞춘다 —
+	// 타이핑 중에는 timer가 걸려 있어 이 동기화가 최신 입력을 덮지 않는다.
+	$effect(() => {
+		if (timer === undefined && draft !== query) {
+			draft = query;
+		}
+	});
+
 	function scheduleCommit(next: string) {
 		// 대기 중이던 이전 타이머를 취소한다 — 늦게 도착한 이전 입력이 최신 입력을 덮지 않게 한다.
 		if (timer !== undefined) clearTimeout(timer);
