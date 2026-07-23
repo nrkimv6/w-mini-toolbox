@@ -11,7 +11,7 @@
 
 	let { block, expandSignal, expandValue }: Props = $props();
 	let expanded = $state(false);
-	let lastSignal = -1;
+	let lastSignal = 0;
 
 	$effect(() => {
 		if (expandSignal !== undefined && expandSignal !== lastSignal) {
