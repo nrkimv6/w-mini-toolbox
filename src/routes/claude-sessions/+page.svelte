@@ -3,11 +3,24 @@
 	// 재사용: transcript-viewer/parser.ts(parseTranscript)만 import — 수정 금지.
 	import { tick, setContext } from 'svelte';
 	import { parseTranscript } from '$lib/tools/transcript-viewer/parser.js';
-	import type { ParseResult, RenderMessage, SessionSummary } from '$lib/tools/transcript-viewer/types.js';
+	import type {
+		CatalogDiff,
+		ParseResult,
+		RenderMessage,
+		ScanFailure,
+		SessionSortKey,
+		SessionSummary,
+		SortDirection
+	} from '$lib/tools/transcript-viewer/types.js';
+	import { isFileSystemAccessSupported, scanWithProgress } from '$lib/tools/transcript-viewer/sessionScanner.js';
+	import { querySessions } from '$lib/tools/transcript-viewer/sessionCatalog.js';
 	import {
-		isFileSystemAccessSupported,
-		scanClaudeProjectsDirectory
-	} from '$lib/tools/transcript-viewer/sessionScanner.js';
+		captureListNavSnapshot,
+		isStaleScanResult,
+		resolveRescanOutcome,
+		restoreListNavSnapshot,
+		type ListNavSnapshot
+	} from '$lib/tools/transcript-viewer/sessionCatalogFlow.js';
 	import { SEARCH_CONTEXT_KEY } from '$lib/tools/transcript-viewer/search.js';
 	import EntryPanel from '$lib/tools/claude-sessions/components/EntryPanel.svelte';
 	import PrivacyNotice from '$lib/tools/claude-sessions/components/PrivacyNotice.svelte';
@@ -17,8 +30,9 @@
 	import SearchBar from '$lib/tools/claude-sessions/components/SearchBar.svelte';
 	import MessageBlock from '$lib/tools/claude-sessions/components/MessageBlock.svelte';
 	import SessionList from '$lib/tools/claude-sessions/components/SessionList.svelte';
+	import ScanStatus from '$lib/tools/claude-sessions/components/ScanStatus.svelte';
 	import { buildMatchIndex, stepMatch, clampCurrent, type DetailSearchContext } from '$lib/tools/claude-sessions/searchNav.js';
-	import { FileWarning, RotateCcw } from 'lucide-svelte';
+	import { FileWarning, RotateCcw, Search as SearchIcon, X } from 'lucide-svelte';
 
 	// item 18 — view 상태머신. `_todo-2`(2026-07-23 재타겟)가 `scanning`/`list` kind를 이 child의
 	// 범위로 확정해 추가한다: `scanning`은 `showDirectoryPicker()` 이후 `scanClaudeProjectsDirectory`
@@ -37,6 +51,57 @@
 	// `fromList`는 상세 뷰의 "목록으로" 버튼 노출 조건(item 12)과 `reset` 계열 함수의 복귀 대상을 결정한다.
 	let sessions = $state<SessionSummary[]>([]);
 	let fromList = $state(false);
+
+	// _todo-2 Phase 1/3 — 스캔 진행/취소/generation 격리 + 재스캔 diff.
+	// `rootHandle`은 "다시 스캔"/"다시 시도"가 같은 폴더를 재사용하기 위한 참조,
+	// `scanGeneration`은 매 스캔 시작마다 증가하는 식별자로 늦게 도착한 이전 스캔 결과를
+	// `isStaleScanResult`가 무시할 수 있게 한다(연속 재스캔·취소가 역순으로 끝나도 안전).
+	let rootHandle: FileSystemDirectoryHandle | null = null;
+	let scanGeneration = $state(0);
+	let scanAbort: AbortController | null = null;
+	let rescanning = $state(false);
+	let scanScanned = $state(0);
+	let scanCurrentPath = $state<string | undefined>(undefined);
+	let scanCancelledFlag = $state(false);
+	let scanFailures = $state<ScanFailure[]>([]);
+	let catalogDiff = $state<CatalogDiff | null>(null);
+
+	// _todo-2 Phase 2 — 목록 검색/정렬 상태. `querySessions`는 여기서 호출해 SessionList에
+	// 이미 필터된 목록을 넘기고(page 소유), 정렬(`sortSessions`)은 SessionList가 소유한다
+	// (SessionList.svelte 상단 주석 참조).
+	let searchQuery = $state('');
+	let sortKey = $state<SessionSortKey>('lastActivity');
+	let sortDir = $state<SortDirection>('desc');
+	let listFocusedPath = $state<string | null>(null);
+
+	const DEFAULT_SORT_KEY: SessionSortKey = 'lastActivity';
+	const DEFAULT_SORT_DIR: SortDirection = 'desc';
+
+	const filteredSessions = $derived(querySessions(sessions, { text: searchQuery }));
+	const listFiltersActive = $derived(
+		searchQuery.trim().length > 0 || sortKey !== DEFAULT_SORT_KEY || sortDir !== DEFAULT_SORT_DIR
+	);
+
+	function clearListFilters() {
+		searchQuery = '';
+		sortKey = DEFAULT_SORT_KEY;
+		sortDir = DEFAULT_SORT_DIR;
+	}
+
+	// _todo-2 Phase 3 — 목록→상세→목록 왕복 시 복원할 스냅샷(검색어/정렬/스크롤/포커스).
+	// `openFromList`에서 캡처하고 `backToList`에서 복원한다. 목록을 거치지 않고 최초
+	// 진입한 경우(`fromList=false`)에는 캡처가 없으므로 복원도 일어나지 않는다.
+	let listNavSnapshot: ListNavSnapshot | null = null;
+
+	// _todo-2 Phase 4 — 상태 전환 시(스캔 완료/재스캔 완료) 초점을 목록 영역으로 이동한다.
+	// `sr-only`로 시각적으로는 숨기되 스크린리더/키보드 사용자가 전환을 인지할 수 있는
+	// 초점 대상을 둔다(가시 UI를 새로 추가하지 않기 위해 검색 입력 대신 별도 heading 사용).
+	let listHeadingEl = $state<HTMLHeadingElement | undefined>(undefined);
+	$effect(() => {
+		if (view.kind === 'list' && !rescanning) {
+			tick().then(() => listHeadingEl?.focus());
+		}
+	});
 
 	// EntryPanel의 readError prop 계약(Phase 2 메모) — 파일 전체를 읽지 못한 경우(86행)와
 	// 예상하지 못한 파싱 오류(90행)를 모두 이 배너 하나로 안내한다. 두 경로 모두 "로컬 파일은
@@ -216,18 +281,69 @@
 		view = { kind: 'detail', fileName: file.name, result };
 	}
 
+	// _todo-2 Phase 1/3 — 스캔 실행 공통 경로. `openFolder`(최초 진입)와 `retryScan`/
+	// "다시 스캔"(list 화면에서 재스캔)이 공유한다. 이전 in-flight 스캔이 있으면 먼저
+	// abort하고(늦은 완료가 새 상태를 덮지 않도록 generation도 함께 올린다), 완료 시
+	// `isStaleScanResult`로 자신이 여전히 최신 스캔인지 확인한 뒤에만 상태를 반영한다.
+	async function runScan(handle: FileSystemDirectoryHandle) {
+		rootHandle = handle;
+		scanAbort?.abort();
+		const controller = new AbortController();
+		scanAbort = controller;
+		const generation = ++scanGeneration;
+
+		scanScanned = 0;
+		scanCurrentPath = undefined;
+		scanFailures = [];
+		catalogDiff = null;
+		if (view.kind !== 'list') {
+			view = { kind: 'scanning' };
+		} else {
+			rescanning = true;
+		}
+
+		const result = await scanWithProgress(handle, {
+			generation,
+			signal: controller.signal,
+			onProgress: (p) => {
+				if (generation !== scanGeneration) return;
+				scanScanned = p.scanned;
+				scanCurrentPath = p.currentPath;
+			}
+		});
+
+		if (isStaleScanResult(scanGeneration, result)) return;
+
+		const outcome = resolveRescanOutcome(sessions, result);
+		sessions = outcome.catalog;
+		catalogDiff = outcome.diff;
+		scanFailures = result.failures;
+		scanCancelledFlag = result.cancelled;
+		scanScanned = result.sessions.length + result.failures.length;
+		rescanning = false;
+		view = { kind: 'list' };
+	}
+
+	/** Phase 1 — 진행 중인 스캔 취소. `scanWithProgress`가 지금까지의 부분 결과를 반환한다 */
+	function cancelScan() {
+		scanAbort?.abort();
+	}
+
+	/** Phase 1/3 — 마지막으로 연 폴더를 다시 스캔한다("다시 시도"/"다시 스캔" 공용) */
+	function retryScan() {
+		if (rootHandle) runScan(rootHandle);
+	}
+
 	// item 10(재타겟) — "폴더 열기" 진입점. `showDirectoryPicker()` → 스캔 → `list` 전환.
 	// picker 취소(`AbortError`)는 조용히 무시한다(item 10 요구사항).
 	async function openFolder() {
 		if (!window.showDirectoryPicker) return;
-		view = { kind: 'scanning' };
 		try {
 			const handle = await window.showDirectoryPicker();
-			sessions = await scanClaudeProjectsDirectory(handle);
-			view = { kind: 'list' };
+			fromList = false;
+			await runScan(handle);
 		} catch (err) {
 			if (err instanceof DOMException && err.name === 'AbortError') {
-				view = { kind: 'entry' };
 				return;
 			}
 			readError = {
@@ -242,9 +358,19 @@
 
 	// item 11(재타겟) — 목록에서 세션 선택 시 `fileHandle`로 다시 읽어 상세로 전환한다.
 	// `fileHandle`이 없는 구형 결과는 조용히 무시한다(item 11 대체 옵션).
+	// _todo-2 Phase 3 — 상세 진입 직전 탐색 상태(검색어/정렬/스크롤/포커스)를 스냅샷으로
+	// 캡처한다. `backToList`가 이 스냅샷으로 복원한다.
 	async function openFromList(path: string) {
 		const session = sessions.find((s) => s.path === path);
 		if (!session?.fileHandle) return;
+
+		listNavSnapshot = captureListNavSnapshot({
+			query: searchQuery,
+			sortKey,
+			sortDir,
+			scrollTop: typeof window !== 'undefined' ? window.scrollY : 0,
+			focusedPath: path
+		});
 
 		view = { kind: 'loading', fileName: session.path };
 		try {
@@ -263,9 +389,28 @@
 		}
 	}
 
-	/** item 12(재타겟) — 목록 경유로 진입한 상세 뷰에서 목록으로 되돌아간다. */
+	/**
+	 * item 12(재타겟) — 목록 경유로 진입한 상세 뷰에서 목록으로 되돌아간다.
+	 * _todo-2 Phase 3 — `openFromList`가 남긴 스냅샷으로 검색어·정렬·포커스를 복원하고,
+	 * 목록이 다시 렌더된 뒤(tick) 스크롤 위치를 복원한다.
+	 */
 	function backToList() {
+		const fallback: ListNavSnapshot = {
+			query: searchQuery,
+			sortKey,
+			sortDir,
+			scrollTop: 0,
+			focusedPath: null
+		};
+		const restored = restoreListNavSnapshot(listNavSnapshot, fallback);
+		searchQuery = restored.query;
+		sortKey = restored.sortKey;
+		sortDir = restored.sortDir;
+		listFocusedPath = restored.focusedPath;
 		view = { kind: 'list' };
+		tick().then(() => {
+			if (typeof window !== 'undefined') window.scrollTo(0, restored.scrollTop);
+		});
 	}
 
 	function expandAll() {
@@ -332,17 +477,110 @@
 				folderSupported={isFileSystemAccessSupported()}
 			/>
 		{:else if view.kind === 'scanning'}
-			<!-- item 10(재타겟) — 폴더 스캔 중 상태 -->
-			<div
-				role="status"
-				aria-live="polite"
-				class="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-border bg-surface px-6 py-16 text-center text-sm text-muted-foreground"
-			>
-				<span>폴더를 스캔하는 중입니다…</span>
-			</div>
+			<!-- item 10(재타겟) — 폴더 스캔 중 상태. _todo-2 Phase 1 — 진행 수치 + 취소 action -->
+			<ScanStatus scanning={true} scanned={scanScanned} currentPath={scanCurrentPath} onCancel={cancelScan} />
 		{:else if view.kind === 'list'}
-			<!-- item 8~9(재타겟) — 세션 목록 -->
-			<SessionList {sessions} onselect={openFromList} />
+			<!-- item 8~9(재타겟) — 세션 목록. _todo-2 Phase 1/3 — 재스캔 진행/취소/복구 상태 -->
+			<div class="flex flex-col gap-4">
+				<h2 bind:this={listHeadingEl} tabindex="-1" class="sr-only focus:outline-none">
+					세션 목록 — {sessions.length}개
+				</h2>
+				{#if rescanning}
+					<ScanStatus scanning={true} scanned={scanScanned} currentPath={scanCurrentPath} onCancel={cancelScan} />
+				{:else}
+					<ScanStatus
+						scanning={false}
+						scanned={scanScanned}
+						cancelled={scanCancelledFlag}
+						failures={scanFailures}
+						onRetry={retryScan}
+						onChooseAnotherFolder={openFolder}
+					/>
+				{/if}
+
+				{#if catalogDiff && (catalogDiff.added.length > 0 || catalogDiff.changed.length > 0 || catalogDiff.removed.length > 0)}
+					<!-- _todo-2 Phase 3 — 재스캔 diff 요약 -->
+					<div
+						role="status"
+						aria-live="polite"
+						class="flex items-center justify-between gap-3 rounded-md border border-border bg-surface px-4 py-2 text-xs text-muted-foreground"
+					>
+						<span>
+							재스캔 결과: 추가 {catalogDiff.added.length}건, 변경 {catalogDiff.changed.length}건, 삭제
+							{catalogDiff.removed.length}건
+						</span>
+						<button
+							type="button"
+							onclick={() => (catalogDiff = null)}
+							aria-label="재스캔 결과 알림 닫기"
+							class="text-muted-foreground hover:text-foreground focus:outline-none focus:ring-2 focus:ring-ring/40"
+						>
+							<X class="size-3.5" aria-hidden="true" />
+						</button>
+					</div>
+				{/if}
+
+				<!-- _todo-2 Phase 2 — 검색·정렬 컨트롤 -->
+				<div class="flex flex-wrap items-center gap-2 rounded-xl border border-border bg-surface p-3">
+					<div class="relative min-w-[14rem] flex-1">
+						<SearchIcon
+							class="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground"
+							aria-hidden="true"
+						/>
+						<input
+							type="text"
+							bind:value={searchQuery}
+							aria-label="세션 목록 검색"
+							placeholder="제목, 프로젝트, 브랜치, 세션 ID 검색…"
+							class="w-full rounded-md border border-border bg-background py-1.5 pl-8 pr-3 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring/40"
+						/>
+					</div>
+
+					<label class="flex items-center gap-1.5 text-xs text-muted-foreground">
+						정렬
+						<select
+							bind:value={sortKey}
+							class="rounded-md border border-border bg-background px-2 py-1.5 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-ring/40"
+						>
+							<option value="lastActivity">최근 활동</option>
+							<option value="title">제목</option>
+							<option value="messageCount">서브에이전트 수</option>
+						</select>
+					</label>
+
+					<button
+						type="button"
+						onclick={() => (sortDir = sortDir === 'desc' ? 'asc' : 'desc')}
+						aria-label={sortDir === 'desc' ? '내림차순 정렬 중 — 오름차순으로 전환' : '오름차순 정렬 중 — 내림차순으로 전환'}
+						class="rounded-md border border-border bg-background px-2.5 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-secondary focus:outline-none focus:ring-2 focus:ring-ring/40"
+					>
+						{sortDir === 'desc' ? '내림차순' : '오름차순'}
+					</button>
+
+					<span class="font-mono text-[10px] tabular-nums text-muted-foreground" aria-live="polite">
+						{filteredSessions.length} / {sessions.length}
+					</span>
+
+					{#if listFiltersActive}
+						<button
+							type="button"
+							onclick={clearListFilters}
+							class="inline-flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground hover:text-foreground focus:outline-none focus:ring-2 focus:ring-ring/40"
+						>
+							<RotateCcw class="size-3" aria-hidden="true" />
+							조건 해제
+						</button>
+					{/if}
+				</div>
+
+				<SessionList
+					sessions={filteredSessions}
+					{sortKey}
+					{sortDir}
+					bind:focusedPath={listFocusedPath}
+					onselect={openFromList}
+				/>
+			</div>
 		{:else if view.kind === 'loading'}
 			<!-- design prompt 28행 — 읽는 중 상태 -->
 			<div
