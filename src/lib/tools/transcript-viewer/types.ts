@@ -191,10 +191,25 @@ export interface CatalogDiff {
 	removed: string[];
 }
 
+/** querySessions가 메모·태그 검색에 사용하는 annotation 최소 형태 */
+export interface SessionQueryAnnotation {
+	note: string;
+	tags: string[];
+}
+
 /** querySessions 검색 조건 */
 export interface SessionQuery {
 	/** 제목/프로젝트(cwd)/브랜치/sessionId 다중 필드 부분일치(대소문자 무시) */
 	text?: string;
+	/**
+	 * 메모·태그 검색 대상 — sessionKey(localRepository.ts의 resolveFavoriteKey와 동일 규칙)
+	 * → annotation 매핑. 지정하지 않으면 메모/태그 검색을 건너뛴다(P1 호출자 하위호환).
+	 */
+	annotations?: Map<string, SessionQueryAnnotation> | Record<string, SessionQueryAnnotation>;
+	/** true면 `text` 검색 대상에 annotation.note/tags도 포함한다(기본 false) */
+	includeAnnotationText?: boolean;
+	/** 태그 조건(AND) — 연결된 annotation.tags가 이 태그를 모두 포함해야 통과(대소문자 무시) */
+	tags?: string[];
 }
 
 /** sortSessions 정렬 기준 키 */

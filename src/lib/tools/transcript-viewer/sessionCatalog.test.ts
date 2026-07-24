@@ -40,6 +40,47 @@ describe('querySessions', () => {
 	});
 });
 
+describe('querySessions — 메모·태그 검색(annotation)', () => {
+	const sessions: SessionSummary[] = [
+		summary({ path: 'p1/a.jsonl', sessionId: 'sess-a', aiTitle: 'Refactor Widgets' }),
+		summary({ path: 'p2/b.jsonl', sessionId: 'sess-b', aiTitle: 'Other Session' })
+	];
+	const annotations = new Map([
+		['sess-a', { note: '중요한 버그 수정', tags: ['bug', 'urgent'] }],
+		['sess-b', { note: '일반 메모', tags: ['chore'] }]
+	]);
+
+	it('annotations 없이 tags 조건만 주면 매칭되는 세션이 없다(annotation 미연결)', () => {
+		expect(querySessions(sessions, { tags: ['bug'] })).toEqual([]);
+	});
+
+	it('tags 조건(AND)으로 필터링한다', () => {
+		const result = querySessions(sessions, { annotations, tags: ['bug'] });
+		expect(result.map((s) => s.path)).toEqual(['p1/a.jsonl']);
+	});
+
+	it('tags 대소문자를 무시한다', () => {
+		const result = querySessions(sessions, { annotations, tags: ['BUG'] });
+		expect(result.map((s) => s.path)).toEqual(['p1/a.jsonl']);
+	});
+
+	it('includeAnnotationText: true면 annotation.note도 text 검색 대상이다', () => {
+		const result = querySessions(sessions, { text: '버그', annotations, includeAnnotationText: true });
+		expect(result.map((s) => s.path)).toEqual(['p1/a.jsonl']);
+	});
+
+	it('includeAnnotationText가 false(기본값)면 annotation.note는 검색 대상이 아니다', () => {
+		const result = querySessions(sessions, { text: '버그', annotations });
+		expect(result).toEqual([]);
+	});
+
+	it('plain object 형태의 annotations도 지원한다(Map과 동일하게 동작)', () => {
+		const record = { 'sess-a': { note: '중요한 버그 수정', tags: ['bug'] } };
+		const result = querySessions(sessions, { annotations: record, tags: ['bug'] });
+		expect(result.map((s) => s.path)).toEqual(['p1/a.jsonl']);
+	});
+});
+
 describe('sortSessions', () => {
 	it('lastActivity 기준 내림차순 정렬한다', () => {
 		const sessions: SessionSummary[] = [

@@ -5,20 +5,48 @@
  * 브라우저 API(File System Access 등)에 의존하지 않으므로 vitest만으로
  * 검증 가능하다. UI 계층(_todo-2)이 이 함수들을 소비한다.
  */
-import type { CatalogDiff, SessionQuery, SessionSortKey, SessionSummary, SortDirection } from './types.js';
+import { resolveFavoriteKey } from './localRepository.js';
+import type { CatalogDiff, SessionQuery, SessionQueryAnnotation, SessionSortKey, SessionSummary, SortDirection } from './types.js';
+
+/** query.annotations(Map 또는 plain object 둘 다 허용)에서 세션에 연결된 annotation을 찾는다 */
+function annotationFor(session: SessionSummary, query: SessionQuery): SessionQueryAnnotation | undefined {
+	if (!query.annotations) return undefined;
+	const key = resolveFavoriteKey(session);
+	return query.annotations instanceof Map ? query.annotations.get(key) : query.annotations[key];
+}
 
 /**
  * 제목(`aiTitle`)/프로젝트(`cwd`)/브랜치(`gitBranch`)/`sessionId` 중
- * 하나라도 `query.text`를 대소문자 무시 부분일치로 포함하면 통과시킨다.
- * `query.text`가 비어있거나 미지정이면 전체를 그대로 반환한다.
+ * 하나라도 `query.text`를 대소문자 무시 부분일치로 포함하면 통과시킨다
+ * (`includeAnnotationText`가 true면 연결된 annotation의 메모/태그도 검색 대상에 포함한다).
+ * `query.tags`가 있으면 연결된 annotation의 태그가 모두 포함되어야 통과한다(AND, 대소문자 무시).
+ * `query.text`/`query.tags`가 둘 다 비어있거나 미지정이면 전체를 그대로 반환한다.
  */
 export function querySessions(sessions: SessionSummary[], query: SessionQuery): SessionSummary[] {
 	const text = query.text?.trim().toLowerCase();
-	if (!text) return sessions;
+	const tagFilter = (query.tags ?? []).map((tag) => tag.trim().toLowerCase()).filter((tag) => tag.length > 0);
+
+	if (!text && tagFilter.length === 0) return sessions;
 
 	return sessions.filter((session) => {
-		const fields = [session.aiTitle, session.cwd, session.gitBranch, session.sessionId];
-		return fields.some((field) => typeof field === 'string' && field.toLowerCase().includes(text));
+		const annotation = annotationFor(session, query);
+
+		if (text) {
+			const fields = [session.aiTitle, session.cwd, session.gitBranch, session.sessionId];
+			const baseMatch = fields.some((field) => typeof field === 'string' && field.toLowerCase().includes(text));
+			const annotationMatch =
+				query.includeAnnotationText && annotation
+					? annotation.note.toLowerCase().includes(text) || annotation.tags.some((tag) => tag.includes(text))
+					: false;
+			if (!baseMatch && !annotationMatch) return false;
+		}
+
+		if (tagFilter.length > 0) {
+			const sessionTags = annotation?.tags ?? [];
+			if (!tagFilter.every((tag) => sessionTags.includes(tag))) return false;
+		}
+
+		return true;
 	});
 }
 
