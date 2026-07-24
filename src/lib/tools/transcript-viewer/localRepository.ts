@@ -1,10 +1,13 @@
 /**
- * Transcript Viewer — 버전 있는 로컬 저장소 (즐겨찾기·최근 폴더)
+ * Transcript Viewer — 버전 있는 로컬 저장소 (즐겨찾기·최근 폴더·메모/태그)
  *
- * `/claude-sessions` 개인화(즐겨찾기·최근 폴더)를 위한 브라우저 로컬 전용 저장 계층.
- * transcript 본문은 저장하지 않고, 안정 세션 식별자(sessionId 우선, 없으면 path)와
- * schema version만 보관한다. 최근 폴더는 `FileSystemDirectoryHandle`(구조화 복제
- * 가능)을 그대로 저장해 재열기 시 폴더 선택 다이얼로그 없이 권한만 재확인한다.
+ * `/claude-sessions` 개인화(즐겨찾기·최근 폴더)와 분석/내보내기(P2)의 메모·태그를
+ * 위한 브라우저 로컬 전용 저장 계층. transcript 본문은 저장하지 않고, 안정 세션
+ * 식별자(sessionId 우선, 없으면 path)와 schema version만 보관한다. 최근 폴더는
+ * `FileSystemDirectoryHandle`(구조화 복제 가능)을 그대로 저장해 재열기 시 폴더 선택
+ * 다이얼로그 없이 권한만 재확인한다. 메모·태그(`SessionAnnotation`)는 즐겨찾기와
+ * 동일한 `resolveFavoriteKey` 식별자로 세션에 연결되는 별도 object store(`annotations`)다
+ * — 같은 versioned store를 확장한 것이라 favorites/recentFolders와 schema version을 공유한다.
  *
  * 이 파일은 배치 위치 확정을 위해 세션 목록 소유 계획서(session-overview/catalog)가
  * 만든 `transcript-viewer/`를 따른다 — `sessionCatalog.ts`/`sessionScanner.ts` 등
@@ -72,6 +75,23 @@ export function resolveFavoriteKey(session: Pick<SessionSummary, 'sessionId' | '
 	return session.sessionId?.trim() || session.path;
 }
 
+/**
+ * 메모·태그(annotation) — transcript 본문은 저장하지 않고, 즐겨찾기와 동일한 안정
+ * 세션 식별자(`resolveFavoriteKey`)로 세션에 연결한다.
+ */
+export interface SessionAnnotation {
+	/** 안정 세션 식별자 — resolveFavoriteKey로 산출(sessionId 우선, 없으면 path) */
+	sessionKey: string;
+	path: string;
+	sessionId?: string;
+	/** 자유 메모. 빈 문자열 허용(태그만 있는 annotation) */
+	note: string;
+	/** 정규화된 태그 목록(trim + lowercase + 중복 제거) — normalizeTags 참조 */
+	tags: string[];
+	createdAt: string;
+	updatedAt: string;
+}
+
 /** 최근 폴더 — 폴더 이름을 dedupe 키로 사용한다(FS Access API는 실제 경로를 노출하지 않음) */
 export interface RecentFolderEntry {
 	/** dedupe 키 — 폴더 이름(`FileSystemDirectoryHandle.name`)과 동일하게 둔다 */
@@ -99,6 +119,10 @@ export interface LocalRepositoryStore {
 	listRecentFolders(): Promise<RecentFolderEntry[]>;
 	putRecentFolder(entry: RecentFolderEntry): Promise<void>;
 	deleteRecentFolder(id: string): Promise<void>;
+	listAnnotations(): Promise<SessionAnnotation[]>;
+	getAnnotation(sessionKey: string): Promise<SessionAnnotation | undefined>;
+	putAnnotation(entry: SessionAnnotation): Promise<void>;
+	deleteAnnotation(sessionKey: string): Promise<void>;
 	clearAll(): Promise<void>;
 }
 
@@ -274,6 +298,113 @@ export async function clearRecentFolders(store: LocalRepositoryStore): Promise<L
 }
 
 /**
+ * 태그 목록을 정규화한다: 앞뒤 공백 제거 → 소문자화 → 빈 문자열 제거 → 중복 제거(순서 보존, 첫 등장 유지).
+ */
+export function normalizeTags(tags: string[]): string[] {
+	const seen = new Set<string>();
+	const result: string[] = [];
+	for (const raw of tags) {
+		const tag = raw.trim().toLowerCase();
+		if (!tag || seen.has(tag)) continue;
+		seen.add(tag);
+		result.push(tag);
+	}
+	return result;
+}
+
+/** 세션 1건의 annotation(메모·태그)을 읽는다. 없으면 `value: undefined` */
+export async function readAnnotation(
+	store: LocalRepositoryStore,
+	sessionKey: string
+): Promise<LocalRepositoryResult<SessionAnnotation | undefined>> {
+	try {
+		return ok(await store.getAnnotation(sessionKey));
+	} catch (err) {
+		return { ok: false, error: toRepositoryError(err) };
+	}
+}
+
+/** annotation 전체 목록을 읽는다 */
+export async function readAnnotations(store: LocalRepositoryStore): Promise<LocalRepositoryResult<SessionAnnotation[]>> {
+	try {
+		return ok(await store.listAnnotations());
+	} catch (err) {
+		return { ok: false, error: toRepositoryError(err) };
+	}
+}
+
+/** upsertAnnotation 입력 — note/tags는 각각 선택적으로 갱신(미지정 시 기존 값 유지) */
+export interface UpsertAnnotationInput {
+	note?: string;
+	tags?: string[];
+}
+
+/**
+ * 세션의 메모·태그를 추가/갱신한다. 기존 annotation이 있으면 `createdAt`을 보존하고
+ * `updatedAt`만 갱신한다(신규면 둘 다 `now`). `tags`는 `normalizeTags`로 정규화한다.
+ * `note`/`tags`를 지정하지 않으면 기존 값을 유지한다(둘 다 없는 신규 annotation은
+ * `note: ''`, `tags: []`로 초기화).
+ */
+export async function upsertAnnotation(
+	store: LocalRepositoryStore,
+	session: Pick<SessionSummary, 'sessionId' | 'path'>,
+	input: UpsertAnnotationInput,
+	now: string = new Date().toISOString()
+): Promise<LocalRepositoryResult<SessionAnnotation>> {
+	const sessionKey = resolveFavoriteKey(session);
+	try {
+		const existing = await store.getAnnotation(sessionKey);
+		const entry: SessionAnnotation = {
+			sessionKey,
+			path: session.path,
+			sessionId: session.sessionId,
+			note: input.note ?? existing?.note ?? '',
+			tags: normalizeTags(input.tags ?? existing?.tags ?? []),
+			createdAt: existing?.createdAt ?? now,
+			updatedAt: now
+		};
+		await store.putAnnotation(entry);
+		return ok(entry);
+	} catch (err) {
+		return { ok: false, error: toRepositoryError(err) };
+	}
+}
+
+/** 세션 1건의 annotation을 삭제한다 */
+export async function removeAnnotation(store: LocalRepositoryStore, sessionKey: string): Promise<LocalRepositoryResult<void>> {
+	try {
+		await store.deleteAnnotation(sessionKey);
+		return ok(undefined);
+	} catch (err) {
+		return { ok: false, error: toRepositoryError(err) };
+	}
+}
+
+/** annotation 전체를 삭제한다(즐겨찾기·최근 폴더·schema version은 유지) */
+export async function clearAllAnnotations(store: LocalRepositoryStore): Promise<LocalRepositoryResult<void>> {
+	try {
+		const existing = await store.listAnnotations();
+		for (const item of existing) await store.deleteAnnotation(item.sessionKey);
+		return ok(undefined);
+	} catch (err) {
+		return { ok: false, error: toRepositoryError(err) };
+	}
+}
+
+/**
+ * 현재 카탈로그(`liveSessions`)에 더 이상 존재하지 않는 sessionKey를 가진 annotation을
+ * 찾는다(순수 함수) — 세션 파일이 옮겨지거나 삭제된 뒤 남은 orphan annotation을
+ * 정리 UI에서 표시하기 위한 용도.
+ */
+export function findOrphanAnnotations(
+	annotations: SessionAnnotation[],
+	liveSessions: Pick<SessionSummary, 'sessionId' | 'path'>[]
+): SessionAnnotation[] {
+	const liveKeys = new Set(liveSessions.map(resolveFavoriteKey));
+	return annotations.filter((annotation) => !liveKeys.has(annotation.sessionKey));
+}
+
+/**
  * File System Access API의 `queryPermission`을 이 파일 로컬로 보강한다
  * (sessionScanner.ts의 `declare global` 보강과 동일한 사유 — lib.dom.d.ts 미포함).
  */
@@ -314,12 +445,15 @@ export function createIndexedDbStore(dbName = 'transcript-viewer-local-repositor
 			return;
 		}
 
-		const request = indexedDB.open(dbName, 1);
+		// DB 버전 2 — annotations object store 추가(P1의 meta/favorites/recentFolders는 유지).
+		// objectStoreNames.contains 가드로 기존 v1 DB에서의 upgrade와 신규 DB 생성 모두 안전하다.
+		const request = indexedDB.open(dbName, 2);
 		request.onupgradeneeded = () => {
 			const db = request.result;
 			if (!db.objectStoreNames.contains('meta')) db.createObjectStore('meta');
 			if (!db.objectStoreNames.contains('favorites')) db.createObjectStore('favorites', { keyPath: 'sessionKey' });
 			if (!db.objectStoreNames.contains('recentFolders')) db.createObjectStore('recentFolders', { keyPath: 'id' });
+			if (!db.objectStoreNames.contains('annotations')) db.createObjectStore('annotations', { keyPath: 'sessionKey' });
 		};
 		request.onerror = () => reject(request.error ?? new Error('IndexedDB open failed'));
 		request.onsuccess = () => {
@@ -385,10 +519,27 @@ function wrapIndexedDb(db: IDBDatabase): LocalRepositoryStore {
 				store.delete(id);
 			});
 		},
+		async listAnnotations() {
+			return tx<SessionAnnotation[]>('annotations', 'readonly', (store) => store.getAll());
+		},
+		async getAnnotation(sessionKey) {
+			return tx<SessionAnnotation | undefined>('annotations', 'readonly', (store) => store.get(sessionKey));
+		},
+		async putAnnotation(entry) {
+			await txAll('annotations', 'readwrite', (store) => {
+				store.put(entry);
+			});
+		},
+		async deleteAnnotation(sessionKey) {
+			await txAll('annotations', 'readwrite', (store) => {
+				store.delete(sessionKey);
+			});
+		},
 		async clearAll() {
 			await txAll('meta', 'readwrite', (store) => store.clear());
 			await txAll('favorites', 'readwrite', (store) => store.clear());
 			await txAll('recentFolders', 'readwrite', (store) => store.clear());
+			await txAll('annotations', 'readwrite', (store) => store.clear());
 		}
 	};
 }

@@ -26,9 +26,17 @@ import {
 	planRecentFolderUpsert,
 	toRepositoryError,
 	verifyRecentFolderPermission,
+	normalizeTags,
+	readAnnotation,
+	readAnnotations,
+	upsertAnnotation,
+	removeAnnotation,
+	clearAllAnnotations,
+	findOrphanAnnotations,
 	type FavoriteEntry,
 	type LocalRepositoryStore,
-	type RecentFolderEntry
+	type RecentFolderEntry,
+	type SessionAnnotation
 } from './localRepository.js';
 
 /** in-memory fake `LocalRepositoryStore` — 실패 유형 주입을 위해 옵션으로 throw 지점을 지정할 수 있다 */
@@ -37,12 +45,14 @@ function fakeStore(
 		schemaVersion?: number;
 		favorites?: FavoriteEntry[];
 		recentFolders?: RecentFolderEntry[];
-		throwOn?: { op: 'putFavorite' | 'putRecentFolder'; error: unknown };
+		annotations?: SessionAnnotation[];
+		throwOn?: { op: 'putFavorite' | 'putRecentFolder' | 'putAnnotation'; error: unknown };
 	} = {}
 ): LocalRepositoryStore {
 	let schemaVersion = options.schemaVersion;
 	let favorites = [...(options.favorites ?? [])];
 	let recentFolders = [...(options.recentFolders ?? [])];
+	let annotations = [...(options.annotations ?? [])];
 
 	return {
 		async getSchemaVersion() {
@@ -71,10 +81,24 @@ function fakeStore(
 		async deleteRecentFolder(id) {
 			recentFolders = recentFolders.filter((f) => f.id !== id);
 		},
+		async listAnnotations() {
+			return annotations;
+		},
+		async getAnnotation(sessionKey) {
+			return annotations.find((a) => a.sessionKey === sessionKey);
+		},
+		async putAnnotation(entry) {
+			if (options.throwOn?.op === 'putAnnotation') throw options.throwOn.error;
+			annotations = [...annotations.filter((a) => a.sessionKey !== entry.sessionKey), entry];
+		},
+		async deleteAnnotation(sessionKey) {
+			annotations = annotations.filter((a) => a.sessionKey !== sessionKey);
+		},
 		async clearAll() {
 			schemaVersion = undefined;
 			favorites = [];
 			recentFolders = [];
+			annotations = [];
 		}
 	};
 }
@@ -353,5 +377,170 @@ describe('verifyRecentFolderPermission', () => {
 		const result = await verifyRecentFolderPermission(handle);
 		expect(result.ok).toBe(false);
 		if (!result.ok) expect(result.error.kind).toBe('permission-expired');
+	});
+});
+
+describe('normalizeTags', () => {
+	it('앞뒤 공백을 제거하고 소문자화한다', () => {
+		expect(normalizeTags([' Foo ', 'BAR'])).toEqual(['foo', 'bar']);
+	});
+
+	it('중복 태그를 제거한다(첫 등장 순서 유지)', () => {
+		expect(normalizeTags(['foo', 'Foo', ' foo ', 'bar'])).toEqual(['foo', 'bar']);
+	});
+
+	it('빈 문자열/공백만 있는 태그는 제거한다', () => {
+		expect(normalizeTags(['foo', '   ', ''])).toEqual(['foo']);
+	});
+
+	it('빈 입력은 빈 배열을 반환한다', () => {
+		expect(normalizeTags([])).toEqual([]);
+	});
+});
+
+describe('annotation CRUD', () => {
+	it('upsertAnnotation/readAnnotation/readAnnotations/removeAnnotation 왕복이 동작한다', async () => {
+		const store = fakeStore();
+
+		const added = await upsertAnnotation(
+			store,
+			{ sessionId: 'sess-1', path: 'p1/sess-1.jsonl' },
+			{ note: '중요 세션', tags: ['Bug', 'urgent'] },
+			'2026-07-23T00:00:00Z'
+		);
+		expect(added).toEqual({
+			ok: true,
+			value: {
+				sessionKey: 'sess-1',
+				path: 'p1/sess-1.jsonl',
+				sessionId: 'sess-1',
+				note: '중요 세션',
+				tags: ['bug', 'urgent'],
+				createdAt: '2026-07-23T00:00:00Z',
+				updatedAt: '2026-07-23T00:00:00Z'
+			}
+		});
+
+		const read = await readAnnotation(store, 'sess-1');
+		expect(read.ok).toBe(true);
+		if (read.ok) expect(read.value?.note).toBe('중요 세션');
+
+		const all = await readAnnotations(store);
+		expect(all).toEqual({ ok: true, value: [added.ok ? added.value : undefined] });
+
+		const removed = await removeAnnotation(store, 'sess-1');
+		expect(removed).toEqual({ ok: true, value: undefined });
+		expect(await readAnnotation(store, 'sess-1')).toEqual({ ok: true, value: undefined });
+	});
+
+	it('기존 annotation을 갱신하면 createdAt은 보존하고 updatedAt만 바뀐다', async () => {
+		const store = fakeStore({
+			annotations: [
+				{
+					sessionKey: 'sess-1',
+					path: 'p1',
+					sessionId: 'sess-1',
+					note: '초기 메모',
+					tags: ['a'],
+					createdAt: '2026-07-20T00:00:00Z',
+					updatedAt: '2026-07-20T00:00:00Z'
+				}
+			]
+		});
+
+		const result = await upsertAnnotation(
+			store,
+			{ sessionId: 'sess-1', path: 'p1' },
+			{ note: '갱신된 메모' },
+			'2026-07-23T00:00:00Z'
+		);
+
+		expect(result.ok).toBe(true);
+		if (result.ok) {
+			expect(result.value.note).toBe('갱신된 메모');
+			expect(result.value.tags).toEqual(['a']); // tags 미지정 시 기존 값 유지
+			expect(result.value.createdAt).toBe('2026-07-20T00:00:00Z');
+			expect(result.value.updatedAt).toBe('2026-07-23T00:00:00Z');
+		}
+	});
+
+	it('upsertAnnotation은 tags를 정규화해 중복을 제거한다', async () => {
+		const store = fakeStore();
+		const result = await upsertAnnotation(
+			store,
+			{ sessionId: 'sess-1', path: 'p1' },
+			{ tags: ['Foo', 'foo', ' FOO ', 'bar'] }
+		);
+		expect(result.ok).toBe(true);
+		if (result.ok) expect(result.value.tags).toEqual(['foo', 'bar']);
+	});
+
+	it('신규 annotation은 note/tags 미지정 시 빈 값으로 초기화된다', async () => {
+		const store = fakeStore();
+		const result = await upsertAnnotation(store, { sessionId: 'sess-1', path: 'p1' }, {});
+		expect(result.ok).toBe(true);
+		if (result.ok) {
+			expect(result.value.note).toBe('');
+			expect(result.value.tags).toEqual([]);
+		}
+	});
+
+	it('sessionId가 없으면 path로 sessionKey를 산출한다(resolveFavoriteKey와 동일 규칙)', async () => {
+		const store = fakeStore();
+		const result = await upsertAnnotation(store, { path: 'p1/sess-x.jsonl' }, { note: 'x' });
+		expect(result.ok).toBe(true);
+		if (result.ok) expect(result.value.sessionKey).toBe('p1/sess-x.jsonl');
+	});
+
+	it('저장 실패(quota) 시 upsertAnnotation이 typed 실패를 반환하고 던지지 않는다', async () => {
+		const store = fakeStore({ throwOn: { op: 'putAnnotation', error: new DOMException('full', 'QuotaExceededError') } });
+		const result = await upsertAnnotation(store, { sessionId: 'sess-1', path: 'p1' }, { note: 'x' });
+		expect(result.ok).toBe(false);
+		if (!result.ok) expect(result.error.kind).toBe('quota-exceeded');
+	});
+
+	it('clearAllAnnotations는 annotation 전체를 지우고 즐겨찾기·최근 폴더는 유지한다', async () => {
+		const store = fakeStore({
+			favorites: [{ sessionKey: 's1', path: 'p1', createdAt: 't' }],
+			recentFolders: [{ id: 'a', name: 'a', handle: { kind: 'directory', name: 'a' } as unknown as FileSystemDirectoryHandle, lastOpenedAt: 't' }],
+			annotations: [
+				{ sessionKey: 's1', path: 'p1', note: 'n1', tags: [], createdAt: 't', updatedAt: 't' },
+				{ sessionKey: 's2', path: 'p2', note: 'n2', tags: [], createdAt: 't', updatedAt: 't' }
+			]
+		});
+
+		const result = await clearAllAnnotations(store);
+
+		expect(result).toEqual({ ok: true, value: undefined });
+		expect(await readAnnotations(store)).toEqual({ ok: true, value: [] });
+		expect(await readFavorites(store)).toEqual({ ok: true, value: [{ sessionKey: 's1', path: 'p1', createdAt: 't' }] });
+		const folders = await readRecentFolders(store);
+		expect(folders.ok).toBe(true);
+		if (folders.ok) expect(folders.value).toHaveLength(1);
+	});
+});
+
+describe('findOrphanAnnotations', () => {
+	function annotation(sessionKey: string): SessionAnnotation {
+		return { sessionKey, path: `${sessionKey}.jsonl`, note: '', tags: [], createdAt: 't', updatedAt: 't' };
+	}
+
+	it('현재 카탈로그에 없는 sessionKey를 가진 annotation을 orphan으로 분류한다', () => {
+		const annotations = [annotation('sess-1'), annotation('sess-2')];
+		const liveSessions = [{ sessionId: 'sess-1', path: 'sess-1.jsonl' }];
+
+		const orphans = findOrphanAnnotations(annotations, liveSessions);
+		expect(orphans.map((a) => a.sessionKey)).toEqual(['sess-2']);
+	});
+
+	it('모든 annotation이 살아있는 세션에 연결되어 있으면 orphan이 없다', () => {
+		const annotations = [annotation('sess-1')];
+		const liveSessions = [{ sessionId: 'sess-1', path: 'sess-1.jsonl' }];
+		expect(findOrphanAnnotations(annotations, liveSessions)).toEqual([]);
+	});
+
+	it('살아있는 세션이 하나도 없으면 모든 annotation이 orphan이다', () => {
+		const annotations = [annotation('sess-1'), annotation('sess-2')];
+		expect(findOrphanAnnotations(annotations, [])).toHaveLength(2);
 	});
 });

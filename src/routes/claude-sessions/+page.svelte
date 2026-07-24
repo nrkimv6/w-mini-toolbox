@@ -10,7 +10,8 @@
 		ScanFailure,
 		SessionSortKey,
 		SessionSummary,
-		SortDirection
+		SortDirection,
+		TranscriptMeta
 	} from '$lib/tools/transcript-viewer/types.js';
 	import { isFileSystemAccessSupported, scanWithProgress } from '$lib/tools/transcript-viewer/sessionScanner.js';
 	import { querySessions } from '$lib/tools/transcript-viewer/sessionCatalog.js';
@@ -36,11 +37,20 @@
 		removeRecentFolder,
 		clearRecentFolders,
 		verifyRecentFolderPermission,
+		readAnnotation,
+		readAnnotations,
+		upsertAnnotation,
+		removeAnnotation,
+		clearAllAnnotations,
 		type FavoriteEntry,
 		type RecentFolderEntry,
 		type LocalRepositoryError,
-		type LocalRepositoryStore
+		type LocalRepositoryStore,
+		type SessionAnnotation,
+		type UpsertAnnotationInput
 	} from '$lib/tools/transcript-viewer/localRepository.js';
+	import type { SessionAnalyticsInput } from '$lib/tools/transcript-viewer/sessionAnalytics.js';
+	import type { ExportSelection } from '$lib/tools/transcript-viewer/exportSession.js';
 	import { groupSidechainRuns } from '$lib/tools/transcript-viewer/grouping.js';
 	import type { RenderGroup } from '$lib/tools/transcript-viewer/grouping.js';
 	import EntryPanel from '$lib/tools/claude-sessions/components/EntryPanel.svelte';
@@ -54,10 +64,14 @@
 	import ScanStatus from '$lib/tools/claude-sessions/components/ScanStatus.svelte';
 	import AgentPanel from '$lib/tools/claude-sessions/components/AgentPanel.svelte';
 	import AgentGroupCard from '$lib/tools/claude-sessions/components/AgentGroupCard.svelte';
+	import SessionAnalysis from '$lib/tools/claude-sessions/components/SessionAnalysis.svelte';
+	import SessionTimeline from '$lib/tools/claude-sessions/components/SessionTimeline.svelte';
+	import SessionExport from '$lib/tools/claude-sessions/components/SessionExport.svelte';
+	import SessionAnnotations from '$lib/tools/claude-sessions/components/SessionAnnotations.svelte';
 	import { buildMatchIndex, stepMatch, clampCurrent, type DetailSearchContext } from '$lib/tools/claude-sessions/searchNav.js';
 	import { collectAgentRuns, messagesForAgent } from '$lib/tools/claude-sessions/agentRuns.js';
 	import type { AgentRun } from '$lib/tools/claude-sessions/agentRuns.js';
-	import { FileWarning, FolderOpen, RotateCcw, Search as SearchIcon, ShieldAlert, Trash2, X } from 'lucide-svelte';
+	import { BarChart3, FileWarning, FolderOpen, RotateCcw, Search as SearchIcon, ShieldAlert, Trash2, X } from 'lucide-svelte';
 
 	/**
 	 * personalization Phase 2 — `FileSystemDirectoryHandle.requestPermission`은 이 프로젝트의
@@ -75,11 +89,15 @@
 	// 범위로 확정해 추가한다: `scanning`은 `showDirectoryPicker()` 이후 `scanClaudeProjectsDirectory`
 	// 완료까지의 폴더 스캔 로딩 상태, `list`는 스캔된 세션 목록 화면이다. `loading`은 단일 파일
 	// 진입(design prompt 28행 "읽는 중" 상태 노출) 전용으로 그대로 유지한다.
+	// Phase 2(분석·annotation, item 5) — 'analysis' kind 추가. 목록(list)에서 진입하고
+	// 목록으로만 되돌아간다(상세 진입 시 openFromList의 기존 fromList/backToList 경로를
+	// 그대로 재사용 — analysis 전용 복귀 스냅샷은 새로 만들지 않는다).
 	type ViewState =
 		| { kind: 'entry' }
 		| { kind: 'loading'; fileName: string }
 		| { kind: 'scanning' }
 		| { kind: 'list' }
+		| { kind: 'analysis' }
 		| { kind: 'detail'; fileName: string; result: ParseResult };
 
 	let view = $state<ViewState>({ kind: 'entry' });
@@ -125,6 +143,16 @@
 	let recentFolderPermission = $state<Record<string, 'checking' | 'granted' | 'expired' | 'unknown'>>({});
 	let recentFolderActionError = $state<string | null>(null);
 
+	// Phase 2(분석·annotation, item 5~7) — 로컬 전용 분석/내보내기/메모·태그 상태.
+	// `sessionMetaCache`는 목록에서 실제로 열어본(=parseTranscript가 실행된) 세션의
+	// `TranscriptMeta`를 path로 캐싱한다 — SessionAnalysis가 "누락값" vs "값 있음"을
+	// 구분하는 유일한 근거다(다시 스캔해도 지워지지 않도록 sessions와 별도로 유지한다).
+	let sessionMetaCache = $state<Record<string, TranscriptMeta>>({});
+	/** 로컬 저장소 전체 메모·태그 목록(sessionKey → annotation) — SessionList 검색·SessionAnnotations 공용 */
+	let annotations = $state<Map<string, SessionAnnotation>>(new Map());
+	let currentAnnotation = $state<SessionAnnotation | undefined>(undefined);
+	let annotationSaveError = $state<LocalRepositoryError | null>(null);
+
 	/** 이번 스캔에서 발견된 전체 세션 키(검색어 무관) — SessionList의 유실 즐겨찾기 판정용 */
 	const allSessionKeys = $derived(new Set(sessions.map((s) => resolveFavoriteKey(s))));
 
@@ -137,6 +165,14 @@
 			recentFolders = recentResult.value;
 			await refreshRecentFolderPermissions(recentFolders);
 		}
+		await reloadAnnotationsMap();
+	}
+
+	/** Phase 2(annotation) — 전체 메모·태그 목록을 다시 읽는다(검색·SessionAnnotations 갱신용) */
+	async function reloadAnnotationsMap() {
+		if (!localStore) return;
+		const result = await readAnnotations(localStore);
+		if (result.ok) annotations = new Map(result.value.map((a) => [a.sessionKey, a]));
 	}
 
 	/** 저장된 최근 폴더 핸들의 읽기 권한을 조용히(프롬프트 없이) 확인해 배지 상태를 채운다 */
@@ -333,6 +369,18 @@
 	const selectedAgentRun = $derived(selectedAgentId ? agentRuns.find((r) => r.agentId === selectedAgentId) : undefined);
 	const highlightedLineIndex = $derived(selectedAgentRun ? selectedAgentRun.launchLineIndex : null);
 
+	/** Phase 2(분석·annotation) — line index로 상세 메시지 위치로 스크롤+포커스한다.
+	 *  selectAgent(위)와 동일한 동작이라 시간 흐름(SessionTimeline) 이동도 이 함수를 공유한다. */
+	function scrollToLineIndex(lineIndex: number) {
+		tick().then(() => {
+			const el = document.getElementById(`cse-msg-${lineIndex}`);
+			if (!el) return;
+			el.scrollIntoView({ block: 'center' });
+			el.setAttribute('tabindex', '-1');
+			el.focus({ preventScroll: true });
+		});
+	}
+
 	// item 11 — 첫 활동 위치로 이동 + aria-live 안내. item 165행.
 	function selectAgent(agentId: string) {
 		selectedAgentId = agentId;
@@ -341,13 +389,119 @@
 			? `${run.description ?? run.agentId} 에이전트의 첫 활동으로 이동했습니다.`
 			: '';
 		if (!run) return;
-		tick().then(() => {
-			const el = document.getElementById(`cse-msg-${run.launchLineIndex}`);
-			if (!el) return;
-			el.scrollIntoView({ block: 'center' });
-			el.setAttribute('tabindex', '-1');
-			el.focus({ preventScroll: true });
+		scrollToLineIndex(run.launchLineIndex);
+	}
+
+	// Phase 2(분석·annotation, item 6) — 시간 흐름 패널 토글 + 선택된(강조할) 이벤트 lineIndex.
+	// AgentPanel과 동일하게 "보기/숨기기" 토글 버튼 패턴을 따른다(showAgentPanel 참조).
+	let showTimeline = $state(false);
+	let timelineSelectedLineIndex = $state<number | null>(null);
+
+	function navigateTimelineEvent(lineIndex: number) {
+		timelineSelectedLineIndex = lineIndex;
+		scrollToLineIndex(lineIndex);
+	}
+
+	// Phase 2(item 7) — 내보내기/메모·태그 패널 토글
+	let showExportPanel = $state(false);
+	let showAnnotationsPanel = $state(false);
+
+	/** Phase 2(item 7) — 현재 열려 있는 상세 세션의 안정 식별자(sessionId 우선, 없으면 path=fileName) */
+	const currentSessionKey = $derived.by(() =>
+		view.kind === 'detail' ? resolveFavoriteKey({ sessionId: view.result.meta.sessionId, path: view.fileName }) : null
+	);
+
+	/** Phase 2(item 7) — 내보내기 대상. openFromList로 진입했든 단일 파일로 진입했든 view.fileName을
+	 *  path로 쓴다(단일 파일 진입은 SessionSummary가 아예 없으므로 이게 유일한 안정 참조). */
+	const currentExportSelection = $derived.by((): ExportSelection | null => {
+		if (view.kind !== 'detail') return null;
+		const meta = view.result.meta;
+		return {
+			session: {
+				path: view.fileName,
+				sessionId: meta.sessionId,
+				aiTitle: meta.aiTitle,
+				cwd: meta.cwd,
+				gitBranch: meta.gitBranch
+			},
+			meta,
+			messages: view.result.messages
+		};
+	});
+
+	// Phase 2(item 7) — 상세 세션이 바뀔 때마다(다른 세션을 열 때마다) 그 세션의 메모·태그를 다시 읽는다.
+	$effect(() => {
+		const key = currentSessionKey;
+		if (!key || !localStore) {
+			currentAnnotation = undefined;
+			return;
+		}
+		readAnnotation(localStore, key).then((result) => {
+			if (result.ok) currentAnnotation = result.value;
 		});
+	});
+
+	async function saveCurrentAnnotation(input: UpsertAnnotationInput) {
+		if (!localStore || view.kind !== 'detail') return;
+		const session = { sessionId: view.result.meta.sessionId, path: view.fileName };
+		const result = await upsertAnnotation(localStore, session, input);
+		if (result.ok) {
+			currentAnnotation = result.value;
+			annotationSaveError = null;
+			await reloadAnnotationsMap();
+		} else {
+			annotationSaveError = result.error;
+		}
+	}
+
+	async function deleteCurrentAnnotation() {
+		if (!localStore || !currentSessionKey) return;
+		const result = await removeAnnotation(localStore, currentSessionKey);
+		if (result.ok) {
+			currentAnnotation = undefined;
+			annotationSaveError = null;
+			await reloadAnnotationsMap();
+		} else {
+			annotationSaveError = result.error;
+		}
+	}
+
+	async function clearAllAnnotationsHandler() {
+		if (!localStore) return;
+		const result = await clearAllAnnotations(localStore);
+		if (result.ok) {
+			currentAnnotation = undefined;
+			annotationSaveError = null;
+			annotations = new Map();
+		} else {
+			annotationSaveError = result.error;
+		}
+	}
+
+	// Phase 2(분석·annotation, item 5) — analysis 화면 진입/이동.
+	/** sessions(카탈로그) + sessionMetaCache(열어본 세션의 meta)를 합친 분석 입력. 아직 열어보지
+	 *  않은 세션은 meta가 undefined로 남아 sessionAnalytics.ts가 누락값으로 처리한다. */
+	const sessionsForAnalysis = $derived.by(
+		(): SessionAnalyticsInput[] => sessions.map((s) => ({ ...s, meta: sessionMetaCache[s.path] }))
+	);
+
+	function openAnalysis() {
+		view = { kind: 'analysis' };
+	}
+
+	function backToListFromAnalysis() {
+		view = { kind: 'list' };
+	}
+
+	/** 분석 화면에서 세션 1건을 상세로 연다 — openFromList와 동일 경로(fromList=true로 "목록으로" 노출) */
+	function openSessionFromAnalysis(path: string) {
+		openFromList(path);
+	}
+
+	/** 분석 화면(프로젝트 집계)에서 프로젝트의 세션들로 목록 검색을 좁힌다 */
+	function openProjectFromAnalysis(project: string) {
+		searchQuery = project === '(unknown)' ? '' : project;
+		view = { kind: 'list' };
 	}
 
 	// item 13 — 전체로 돌아가기. 사용자 필터/스크롤 상태는 건드리지 않는다(복원 코드를 새로 만들지 않는다).
@@ -536,6 +690,9 @@
 		resetExpand();
 		resetSearch();
 		resetAgentSelection();
+		showTimeline = false;
+		showExportPanel = false;
+		showAnnotationsPanel = false;
 		fromList = false;
 		view = { kind: 'detail', fileName: file.name, result };
 	}
@@ -658,6 +815,13 @@
 			resetFilters();
 			resetExpand();
 			resetSearch();
+			resetAgentSelection();
+			showTimeline = false;
+			showExportPanel = false;
+			showAnnotationsPanel = false;
+			// Phase 2(분석·annotation, item 5) — 이 세션의 전체 meta를 캐싱해 SessionAnalysis가
+			// "아직 열어보지 않은 세션"과 구분할 수 있게 한다(누락값 처리 근거).
+			sessionMetaCache[session.path] = result.meta;
 			fromList = true;
 			view = { kind: 'detail', fileName: session.path, result };
 		} catch {
@@ -685,6 +849,9 @@
 		sortDir = restored.sortDir;
 		listFocusedPath = restored.focusedPath;
 		resetAgentSelection();
+		showTimeline = false;
+		showExportPanel = false;
+		showAnnotationsPanel = false;
 		view = { kind: 'list' };
 		tick().then(() => {
 			if (typeof window !== 'undefined') window.scrollTo(0, restored.scrollTop);
@@ -716,6 +883,9 @@
 		resetExpand();
 		resetSearch();
 		resetAgentSelection();
+		showTimeline = false;
+		showExportPanel = false;
+		showAnnotationsPanel = false;
 	}
 </script>
 
@@ -973,6 +1143,18 @@
 							조건 해제
 						</button>
 					{/if}
+
+					<!-- Phase 2(분석·annotation, item 5) — 분석 화면 진입 -->
+					{#if sessions.length > 0}
+						<button
+							type="button"
+							onclick={openAnalysis}
+							class="ml-auto inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-2.5 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-secondary focus:outline-none focus:ring-2 focus:ring-ring/40"
+						>
+							<BarChart3 class="size-3.5" aria-hidden="true" />
+							세션 분석
+						</button>
+					{/if}
 				</div>
 
 				<SessionList
@@ -985,6 +1167,26 @@
 					{allSessionKeys}
 					onToggleFavorite={toggleFavorite}
 					onRemoveOrphanedFavorite={removeOrphanedFavorite}
+					{annotations}
+				/>
+			</div>
+		{:else if view.kind === 'analysis'}
+			<!-- Phase 2(분석·annotation, item 5) — 여러 세션 비교 + 프로젝트별 집계 -->
+			<div class="flex flex-col gap-4">
+				<div class="flex items-center justify-between gap-2">
+					<h2 class="text-lg font-semibold tracking-tight">세션 분석</h2>
+					<button
+						type="button"
+						onclick={backToListFromAnalysis}
+						class="rounded-md border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-secondary focus:outline-none focus:ring-2 focus:ring-ring/40"
+					>
+						목록으로
+					</button>
+				</div>
+				<SessionAnalysis
+					sessions={sessionsForAnalysis}
+					onOpenSession={openSessionFromAnalysis}
+					onOpenProject={openProjectFromAnalysis}
 				/>
 			</div>
 		{:else if view.kind === 'loading'}
@@ -1007,6 +1209,58 @@
 					onOpenAnotherFile={openAnotherFile}
 					onBackToList={fromList ? backToList : undefined}
 				/>
+
+				<!-- Phase 2(분석·annotation, item 6~7) — 시간 흐름/내보내기/메모·태그 패널 토글.
+				     AgentPanel과 동일한 "보기/숨기기" 토글 버튼 패턴(아래 서브에이전트 버튼 참조). -->
+				<div class="flex flex-wrap items-center gap-2">
+					<button
+						type="button"
+						onclick={() => (showTimeline = !showTimeline)}
+						aria-expanded={showTimeline}
+						class="rounded-md border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-secondary focus:outline-none focus:ring-2 focus:ring-ring/40"
+					>
+						시간 흐름 {showTimeline ? '숨기기' : '보기'}
+					</button>
+					<button
+						type="button"
+						onclick={() => (showExportPanel = !showExportPanel)}
+						aria-expanded={showExportPanel}
+						class="rounded-md border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-secondary focus:outline-none focus:ring-2 focus:ring-ring/40"
+					>
+						내보내기 {showExportPanel ? '숨기기' : '열기'}
+					</button>
+					<button
+						type="button"
+						onclick={() => (showAnnotationsPanel = !showAnnotationsPanel)}
+						aria-expanded={showAnnotationsPanel}
+						class="rounded-md border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-secondary focus:outline-none focus:ring-2 focus:ring-ring/40"
+					>
+						메모·태그 {currentAnnotation ? `(${currentAnnotation.tags.length})` : ''}
+						{showAnnotationsPanel ? '숨기기' : '열기'}
+					</button>
+				</div>
+
+				{#if showTimeline}
+					<SessionTimeline
+						messages={result.messages}
+						onNavigate={navigateTimelineEvent}
+						selectedLineIndex={timelineSelectedLineIndex}
+					/>
+				{/if}
+
+				{#if showExportPanel && currentExportSelection}
+					<SessionExport selection={currentExportSelection} />
+				{/if}
+
+				{#if showAnnotationsPanel}
+					<SessionAnnotations
+						annotation={currentAnnotation}
+						saveError={annotationSaveError}
+						onSave={saveCurrentAnnotation}
+						onDelete={deleteCurrentAnnotation}
+						onClearAll={clearAllAnnotationsHandler}
+					/>
+				{/if}
 
 				<!-- Phase 3~4 (item 10 둘째 항목) — 서브에이전트 진입 조작: 런이 0건이면 동작 없는
 				     컨트롤을 남기지 않기 위해 토글 버튼 자체를 렌더하지 않는다(이 세션에는 서브에이전트가
