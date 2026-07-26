@@ -5,8 +5,8 @@ main = ".svelte-kit/cloudflare/_worker.js"
 workers_dev = true
 
 [vars]
-PUBLIC_SUPABASE_URL = "https://qxiuqztinabmdhclxsuz.supabase.co"
-PUBLIC_SUPABASE_ANON_KEY = "sb_publishable_ujqoBN-UBndhHh8aUA5Tog_gZOYPTEA"
+PUBLIC_SUPABASE_URL = "https://gstmjzlqvgqpafiktxxo.supabase.co"
+PUBLIC_SUPABASE_ANON_KEY = "sb_publishable_gHPthwab75Qoz-3zSaU3rQ_YiVj4JbT"
 PUBLIC_AUTH_WORKER_URL = "https://auth.woory.day"
 PUBLIC_APP_ID = "mini-toolbox"
 # Gemini Assist: 클라이언트 번들 버튼 렌더 여부 (운영 활성화 시 'true'로 변경)
