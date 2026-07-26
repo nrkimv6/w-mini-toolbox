@@ -12,6 +12,9 @@
 	import { imageHistory } from '$lib/tools/screenshot/stores/imageHistory';
 	import { i18n } from '$lib/tools/screenshot/i18n';
 	import JSZip from 'jszip';
+	import { goto } from '$app/navigation';
+	import { authStore } from '$lib/stores/auth.svelte';
+	import { Lock, Loader2 } from 'lucide-svelte';
 
 	let images = $state<ScreenshotData[]>([]);
 	let config = $state<ScreenshotConfig>({ ...defaultConfig });
@@ -148,46 +151,74 @@
 			toast.error(i18n.t('generationFailed'));
 		}
 	}
+
+	$effect(() => {
+		if (!authStore.loading && !authStore.isAdmin) goto('/', { replaceState: true });
+	});
 </script>
 
-<div class="min-h-screen bg-background pb-20">
-	<div class="mx-auto max-w-7xl px-4 py-8">
-		<!-- Header -->
-		<div class="mb-6 lg:mb-12 text-center">
-			<h1 class="text-2xl lg:text-4xl font-bold tracking-tight mb-2 lg:mb-3">
-				{i18n.t('title')}
-			</h1>
-			<p class="text-sm lg:text-lg text-muted-foreground">
-				{i18n.t('subtitle')}
-			</p>
-		</div>
-
-		<div class="grid gap-8 lg:gap-12 lg:grid-cols-2 items-start">
-			<!-- Controls -->
-			<div class="space-y-6 lg:space-y-8 order-2 lg:order-1">
-				<ImageUploader {images} onImagesChange={handleImagesChange} />
-				<ConfigPanel {config} onConfigChange={handleConfigChange} />
-				<AppearancePanel {config} onConfigChange={handleConfigChange} />
-				<TextOverlayPanel {config} onConfigChange={handleConfigChange} />
-				<WatermarkPanel {config} onConfigChange={handleConfigChange} />
-				<DownloadButton
-					imageCount={images.length}
-					{isGenerating}
-					{generationProgress}
-					{generationTotal}
-					onDownload={handleDownloadAll}
-					onCancel={handleCancelGeneration}
-				/>
-				<HistoryPanel bind:this={historyPanel} />
-			</div>
-
-			<!-- Preview Area -->
-			<PreviewArea
-				{images}
-				{config}
-				bind:mockupElements
-				onDownloadSingle={handleDownloadSingle}
-			/>
+{#if authStore.loading}
+	<div class="flex min-h-screen items-center justify-center bg-background">
+		<div class="flex flex-col items-center gap-4">
+			<Loader2 class="w-8 h-8 animate-spin text-primary" />
+			<p class="text-muted-foreground">확인 중...</p>
 		</div>
 	</div>
-</div>
+{:else if !authStore.isAdmin}
+	<div class="flex min-h-screen items-center justify-center bg-background">
+		<div class="max-w-sm w-full mx-4 p-8 rounded-xl bg-card shadow-lg border border-border text-center">
+			<div class="flex flex-col items-center gap-4">
+				<Lock class="w-8 h-8 text-muted-foreground" />
+				<p class="text-muted-foreground">관리자만 접근할 수 있는 페이지입니다.</p>
+				<a
+					href={authStore.getGoogleLoginUrl()}
+					class="inline-block px-6 py-2 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
+				>
+					로그인하기
+				</a>
+			</div>
+		</div>
+	</div>
+{:else}
+	<div class="min-h-screen bg-background pb-20">
+		<div class="mx-auto max-w-7xl px-4 py-8">
+			<!-- Header -->
+			<div class="mb-6 lg:mb-12 text-center">
+				<h1 class="text-2xl lg:text-4xl font-bold tracking-tight mb-2 lg:mb-3">
+					{i18n.t('title')}
+				</h1>
+				<p class="text-sm lg:text-lg text-muted-foreground">
+					{i18n.t('subtitle')}
+				</p>
+			</div>
+
+			<div class="grid gap-8 lg:gap-12 lg:grid-cols-2 items-start">
+				<!-- Controls -->
+				<div class="space-y-6 lg:space-y-8 order-2 lg:order-1">
+					<ImageUploader {images} onImagesChange={handleImagesChange} />
+					<ConfigPanel {config} onConfigChange={handleConfigChange} />
+					<AppearancePanel {config} onConfigChange={handleConfigChange} />
+					<TextOverlayPanel {config} onConfigChange={handleConfigChange} />
+					<WatermarkPanel {config} onConfigChange={handleConfigChange} />
+					<DownloadButton
+						imageCount={images.length}
+						{isGenerating}
+						{generationProgress}
+						{generationTotal}
+						onDownload={handleDownloadAll}
+						onCancel={handleCancelGeneration}
+					/>
+					<HistoryPanel bind:this={historyPanel} />
+				</div>
+
+				<!-- Preview Area -->
+				<PreviewArea
+					{images}
+					{config}
+					bind:mockupElements
+					onDownloadSingle={handleDownloadSingle}
+				/>
+			</div>
+		</div>
+	</div>
+{/if}
