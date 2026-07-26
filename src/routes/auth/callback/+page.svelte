@@ -10,7 +10,8 @@
 	let error = $state<string | null>(null);
 	let status = $state<string>("로그인 처리 중...");
 
-	// Query parameter에서 토큰 파싱 (웹에서 Worker가 리다이렉트)
+	// provider/returnTo/error는 query parameter, 토큰류는 hash fragment
+	// (auth-worker가 토큰을 서버 로그에 남기지 않기 위해 hash fragment로 전달함 — src/utils/response.ts 참조)
 	function parseQueryParams(): {
 		provider?: string;
 		access_token?: string;
@@ -23,12 +24,13 @@
 		if (!browser) return null;
 
 		const searchParams = new URLSearchParams(window.location.search);
+		const hashParams = new URLSearchParams(window.location.hash.slice(1));
 
 		const provider = searchParams.get("provider");
-		const id_token = searchParams.get("id_token");
-		const access_token = searchParams.get("access_token");
-		const supabase_access_token = searchParams.get("supabase_access_token");
-		const supabase_refresh_token = searchParams.get("supabase_refresh_token");
+		const id_token = hashParams.get("id_token");
+		const access_token = hashParams.get("access_token");
+		const supabase_access_token = hashParams.get("supabase_access_token");
+		const supabase_refresh_token = hashParams.get("supabase_refresh_token");
 		const returnTo = searchParams.get("returnTo");
 		const errorParam = searchParams.get("error");
 
