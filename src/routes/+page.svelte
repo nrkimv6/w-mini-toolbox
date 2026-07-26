@@ -1,8 +1,9 @@
 <script lang="ts">
-	import { tools } from '$lib/data';
+	import { tools, filterVisibleTools } from '$lib/data';
 	import { FileText, Smartphone, FolderOpen } from 'lucide-svelte';
 	import type { ComponentType } from 'svelte';
 	import { APP_VERSION } from '$lib/config';
+	import { authStore } from '$lib/stores/auth.svelte';
 
 	// Icon mapping
 	const iconMap: Record<string, ComponentType> = {
@@ -10,6 +11,10 @@
 		Smartphone,
 		FolderOpen
 	};
+
+	// authStore.loading이 true인 동안 isAdmin이 false라 admin 카드가 숨겨진 채 시작하고,
+	// 로딩 완료 시 $derived 재평가로 나타난다.
+	const visibleTools = $derived(filterVisibleTools(tools, authStore.isAdmin));
 </script>
 
 <svelte:head>
@@ -21,7 +26,7 @@
 	<p class="mb-8 text-gray-500">가볍고 빠른 웹 도구 모음</p>
 
 	<div class="grid w-full max-w-md gap-4">
-		{#each tools as tool}
+		{#each visibleTools as tool}
 			{@const Icon = iconMap[tool.icon] || FileText}
 			<a
 				href={tool.href}
