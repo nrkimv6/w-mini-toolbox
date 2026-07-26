@@ -2,6 +2,7 @@ import { browser } from '$app/environment';
 import type { User } from '@supabase/supabase-js';
 import { supabase } from '$lib/supabase';
 import { config } from '$lib/config';
+import { resolveIsAdmin } from '$lib/auth/role';
 import { cleanup as htmlToMdCleanup } from './html-to-md.svelte';
 
 function createAuthStore() {
@@ -78,6 +79,10 @@ function createAuthStore() {
 		},
 		get isAuthenticated() {
 			return !!user;
+		},
+		// onAuthStateChange가 user $state를 갱신하므로 별도 캐시 없이 매번 재평가된다
+		get isAdmin() {
+			return resolveIsAdmin(user);
 		},
 
 		initialize,

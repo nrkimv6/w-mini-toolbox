@@ -4,6 +4,7 @@ export interface Tool {
 	description: string;
 	icon: string;
 	href: string;
+	adminOnly?: boolean;
 }
 
 export const tools: Tool[] = [
@@ -19,7 +20,8 @@ export const tools: Tool[] = [
 		name: 'Screenshot Mockup',
 		description: '모바일 디바이스 프레임 목업 생성',
 		icon: 'Smartphone',
-		href: '/screenshot'
+		href: '/screenshot',
+		adminOnly: true
 	},
 	{
 		id: 'claude-sessions',
@@ -29,3 +31,7 @@ export const tools: Tool[] = [
 		href: '/claude-sessions'
 	}
 ];
+
+export function filterVisibleTools(all: Tool[], isAdmin: boolean): Tool[] {
+	return all.filter((t) => !t.adminOnly || isAdmin);
+}
